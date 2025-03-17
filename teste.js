@@ -8,26 +8,37 @@ const app = express();
 // Habilitar CORS para permitir acesso do frontend
 app.use(cors());
 
-// Configurar o Multer para salvar os arquivos na pasta "uploads"
-const upload = multer({
-    dest: 'uploads/', // Diretório onde os arquivos serão salvos
-});
-
-// Certifique-se de que a pasta "uploads" existe no servidor
+// Criar a pasta "uploads" se não existir
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir);  // Cria a pasta uploads se não existir
+    fs.mkdirSync(uploadsDir);
 }
+
+// Configurar o Multer para armazenar os arquivos com a extensão correta
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/'); // Diretório onde os arquivos serão salvos
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname) || '.wav'; // Mantém a extensão do arquivo original
+        cb(null, `${Date.now()}${ext}`); // Nomeia o arquivo com timestamp para evitar conflitos
+    }
+});
+const upload = multer({ storage });
+
+// Rota de verificação do servidor
+app.get('/', (req, res) => {
+    res.send('Servidor está rodando! 🚀');
+});
 
 // Rota para upload do áudio
 app.post('/upload', upload.single('audio'), (req, res) => {
-    console.log('Arquivo recebido:', req.file); // Logar o arquivo recebido
     if (!req.file) {
         return res.status(400).send('Nenhum arquivo enviado.');
     }
 
-    const fileName = req.file.filename; // Nome gerado automaticamente pelo multer
-    console.log(`Áudio gravado: ${fileName}`);
+    const fileName = req.file.filename; // Nome do arquivo salvo
+    console.log(`Áudio recebido e salvo como: ${fileName}`);
     res.send({ message: 'Áudio recebido com sucesso!', file: fileName });
 });
 
