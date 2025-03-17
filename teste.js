@@ -21,18 +21,14 @@ app.post('/upload', upload.single('audio'), (req, res) => {
         return res.status(400).send('Nenhum arquivo enviado.');
     }
 
-    const fileName = req.file.filename; // Pega o nome do arquivo gravado
-    console.log(`Áudio gravado: ${fileName}`);
+    // O nome do arquivo gerado pelo Multer
+    const fileName = req.file.filename; // Nome gerado automaticamente pelo multer
+    console.log(`Áudio gravado: ${fileName}`);  // Você pode visualizar o nome do arquivo aqui no console
     res.send({ message: 'Áudio recebido com sucesso!', file: fileName });
 });
 
-// Rota para acessar os arquivos gravados (servido estaticamente)
+// Rota para acessar os arquivos gravados
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Rota principal (para testar o funcionamento básico)
-app.get('/', (req, res) => {
-    res.send('Bem-vindo ao Web Service de Upload de Áudio!');
-});
 
 // Iniciar o servidor
 const PORT = process.env.PORT || 3000;
