@@ -31,12 +31,12 @@
                 const audioUrl = URL.createObjectURL(audioBlob);
                 document.getElementById('audioPlayer').src = audioUrl;
 
-                // Enviar para o servidor
+                // Enviar para o servidor no Render
                 const formData = new FormData();
                 formData.append('audio', audioBlob, 'audio.wav');
 
                 try {
-                    const response = await fetch('http://localhost:3000/upload', {
+                    const response = await fetch('https://seu-servidor.onrender.com/upload', {
                         method: 'POST',
                         body: formData
                     });
