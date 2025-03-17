@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const app = express();
 
 // Configurar o Multer para salvar os arquivos na pasta "uploads"
@@ -9,9 +10,7 @@ const upload = multer({
 });
 
 // Certifique-se de que a pasta "uploads" existe no servidor
-const fs = require('fs');
 const uploadsDir = path.join(__dirname, 'uploads');
-
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir);  // Cria a pasta uploads se não existir
 }
@@ -27,8 +26,13 @@ app.post('/upload', upload.single('audio'), (req, res) => {
     res.send({ message: 'Áudio recebido com sucesso!', file: fileName });
 });
 
-// Rota para acessar os arquivos gravados
+// Rota para acessar os arquivos gravados (servido estaticamente)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Rota principal (para testar o funcionamento básico)
+app.get('/', (req, res) => {
+    res.send('Bem-vindo ao Web Service de Upload de Áudio!');
+});
 
 // Iniciar o servidor
 const PORT = process.env.PORT || 3000;
