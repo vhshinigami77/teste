@@ -4,6 +4,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gravar e Enviar Áudio</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #audioPlayer {
+            margin-top: 20px;
+        }
+        p {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+    </style>
 </head>
 <body>
     <h1>Gravar e Enviar Áudio</h1>
@@ -36,10 +63,10 @@
 
                 // Enviar o áudio para o backend
                 const formData = new FormData();
-                formData.append('audio', audioBlob, 'audio.wav');
+                formData.append('audio', audioBlob, 'audio.wav'); // Certifique-se de que o nome do campo é 'audio'
 
                 // Substitua pela URL real do backend hospedado no Render
-                fetch('https://https://teste-fb8o.onrender.com', {
+                fetch('https://seu-app-backend.onrender.com/upload', {
                     method: 'POST',
                     body: formData,
                 })
