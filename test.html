@@ -36,7 +36,7 @@
                 formData.append('audio', audioBlob, 'audio.wav');
 
                 try {
-                    const response = await fetch('https://teste-fb8o.onrender.com/uploads', {  // **AQUI** troque a URL
+                    const response = await fetch('https://teste-fb8o.onrender.com/', {  // **AQUI** troque a URL
                         method: 'POST',
                         body: formData
                     });
