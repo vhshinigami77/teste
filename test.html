@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravar e Enviar Áudio</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #audioPlayer {
+            margin-top: 20px;
+        }
+        p {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Gravar e Enviar Áudio</h1>
+    <button id="recordButton">Gravar Áudio</button>
+    <button id="stopButton" disabled>Parar Gravação</button>
+    <audio id="audioPlayer" controls></audio>
+    <p id="fileName"></p> <!-- Exibe o nome do arquivo enviado -->
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        const recordButton = document.getElementById('recordButton');
+        const stopButton = document.getElementById('stopButton');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const fileNameDisplay = document.getElementById('fileName'); // Elemento para exibir o nome do arquivo
+
+        // Função para iniciar a gravação
+        recordButton.onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayer.src = audioUrl;
+
+                // Enviar o áudio para o backend
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'audio.wav'); // Certifique-se de que o nome do campo é 'audio'
+
+                // Substitua pela URL real do backend hospedado no Render
+                fetch('https://teste-fb8o.onrender.com/upload', {
+                    method: 'POST',
+                    body: formData,
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert('Áudio enviado com sucesso!');
+                    fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;  // Exibe o nome do arquivo retornado pelo backend
+                })
+                .catch(error => {
+                    console.error('Erro ao enviar áudio:', error);
+                    alert('Erro ao enviar áudio.');
+                });
+            };
+
+            mediaRecorder.start();
+            recordButton.disabled = true;
+            stopButton.disabled = false;
+        };
+
+        // Função para parar a gravação
+        stopButton.onclick = () => {
+            mediaRecorder.stop();
+            recordButton.disabled = false;
+            stopButton.disabled = true;
+        };
+    </script>
+</body>
+</html>
