@@ -30,6 +30,15 @@
             margin-top: 20px;
             font-size: 18px;
         }
+        a {
+            display: block;
+            margin-top: 20px;
+            color: #007bff;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -38,6 +47,7 @@
     <button id="stopButton" disabled>Parar Gravação</button>
     <audio id="audioPlayer" controls></audio>
     <p id="fileName"></p> <!-- Exibe o nome do arquivo enviado -->
+    <div id="csvLinkContainer"></div> <!-- Link para o arquivo CSV -->
 
     <script>
         let mediaRecorder;
@@ -46,6 +56,7 @@
         const stopButton = document.getElementById('stopButton');
         const audioPlayer = document.getElementById('audioPlayer');
         const fileNameDisplay = document.getElementById('fileName'); // Elemento para exibir o nome do arquivo
+        const csvLinkContainer = document.getElementById('csvLinkContainer'); // Elemento para exibir o link para o CSV
 
         // Função para iniciar a gravação
         recordButton.onclick = async () => {
@@ -73,7 +84,14 @@
                 .then(response => response.json())
                 .then(data => {
                     alert('Áudio enviado com sucesso!');
-                    fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;  // Exibe o nome do arquivo retornado pelo backend
+                    fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;
+
+                    // Exibe o link para o arquivo CSV gerado
+                    const dataFileLink = document.createElement('a');
+                    dataFileLink.href = `https://teste-fb8o.onrender.com/uploads/${data.dataFile.split('/').pop()}`;
+                    dataFileLink.textContent = 'Baixar CSV com os dados do áudio';
+                    csvLinkContainer.innerHTML = ''; // Limpa qualquer link anterior
+                    csvLinkContainer.appendChild(dataFileLink);
                 })
                 .catch(error => {
                     console.error('Erro ao enviar áudio:', error);
