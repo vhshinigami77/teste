@@ -37,14 +37,21 @@ app.post('/upload', upload.single('audio'), (req, res) => {
         return res.status(400).send('Nenhum arquivo enviado.');
     }
 
-    // Verificar o tipo MIME do arquivo enviado
+    // Verificar o tipo de arquivo
     const fileType = req.file.mimetype;
     if (fileType !== 'audio/wav') {
         return res.status(400).send('O arquivo enviado não é um WAV válido.');
     }
 
     const fileName = req.file.filename;
-    console.log(`Áudio recebido e salvo como: ${fileName}`);
+    const filePath = path.join(__dirname, 'uploads', fileName);
+    
+    // Log de informações do arquivo recebido
+    console.log(`Áudio recebido: ${fileName}`);
+    console.log(`Caminho completo do arquivo: ${filePath}`);
+    console.log(`Tipo MIME do arquivo: ${req.file.mimetype}`);
+    console.log(`Tamanho do arquivo: ${req.file.size} bytes`);
+
     res.send({ message: 'Áudio recebido com sucesso!', file: fileName });
 });
 
@@ -53,10 +60,7 @@ app.get('/convert/:fileName', async (req, res) => {
     const fileName = req.params.fileName;
     const filePath = path.join(__dirname, 'uploads', fileName);
 
-    console.log(`Tentando converter o arquivo: ${filePath}`);
-
     if (!fs.existsSync(filePath)) {
-        console.log(`Arquivo não encontrado: ${filePath}`);
         return res.status(404).send('Arquivo não encontrado');
     }
 
@@ -69,8 +73,6 @@ app.get('/convert/:fileName', async (req, res) => {
         const sampleRate = decoded.sampleRate;
         const samples = decoded.channelData[0];
 
-        console.log('Decodificação concluída, gerando arquivo .txt');
-
         const txtFilePath = path.join(__dirname, 'uploads', 'audio.txt');
         const writeStream = fs.createWriteStream(txtFilePath);
 
@@ -81,7 +83,6 @@ app.get('/convert/:fileName', async (req, res) => {
         });
 
         writeStream.end();
-        console.log('Arquivo .txt gerado com sucesso');
 
         // Enviar resposta confirmando que a conversão foi realizada
         res.send({ message: 'Conversão concluída', file: 'audio.txt' });
