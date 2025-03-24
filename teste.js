@@ -73,6 +73,11 @@ app.get('/convert/:fileName', async (req, res) => {
         const sampleRate = decoded.sampleRate;
         const samples = decoded.channelData[0];
 
+        // Verificar se os samples estão sendo lidos corretamente
+        console.log(`Taxa de amostragem: ${sampleRate}`);
+        console.log(`Número de amostras: ${samples.length}`);
+
+        // Criar caminho para o arquivo .txt
         const txtFilePath = path.join(__dirname, 'uploads', 'audio.txt');
         const writeStream = fs.createWriteStream(txtFilePath);
 
@@ -83,6 +88,10 @@ app.get('/convert/:fileName', async (req, res) => {
         });
 
         writeStream.end();
+
+        writeStream.on('finish', () => {
+            console.log('Arquivo .txt gerado com sucesso');
+        });
 
         // Enviar resposta confirmando que a conversão foi realizada
         res.send({ message: 'Conversão concluída', file: 'audio.txt' });
