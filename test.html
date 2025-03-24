@@ -68,7 +68,7 @@
                 const formData = new FormData();
                 formData.append('audio', audioBlob, 'audio.wav');
 
-                fetch('https://teste-fb8o.onrender.com/upload', {  // Altere para o URL correto do seu servidor
+                fetch('https://seu-servidor.herokuapp.com/upload', {  // Altere para o URL correto do seu servidor
                     method: 'POST',
                     body: formData,
                 })
@@ -85,14 +85,14 @@
 
             mediaRecorder.start();
             recordButton.disabled = true;
-            stopButton.disabled = false;
+            stopButton.disabled = false; // Habilita o botão de parar a gravação
         };
 
         // Função para parar a gravação
         stopButton.onclick = () => {
             mediaRecorder.stop();
             recordButton.disabled = false;
-            stopButton.disabled = true;
+            stopButton.disabled = true; // Desabilita o botão de parar após a gravação ser parada
         };
     </script>
 </body>
