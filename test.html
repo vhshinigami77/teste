@@ -45,12 +45,15 @@
         const recordButton = document.getElementById('recordButton');
         const stopButton = document.getElementById('stopButton');
         const audioPlayer = document.getElementById('audioPlayer');
-        const fileNameDisplay = document.getElementById('fileName'); // Elemento para exibir o nome do arquivo
+        const fileNameDisplay = document.getElementById('fileName');
 
         // Função para iniciar a gravação
         recordButton.onclick = async () => {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
+
+            // Forçar a gravação no formato WAV
+            const options = { mimeType: 'audio/wav' };
+            mediaRecorder = new MediaRecorder(stream, options);
 
             mediaRecorder.ondataavailable = event => {
                 audioChunks.push(event.data);
@@ -61,21 +64,18 @@
                 const audioUrl = URL.createObjectURL(audioBlob);
                 audioPlayer.src = audioUrl;
 
-                // Verificar o tipo MIME do arquivo
-                console.log('Tipo MIME do arquivo:', audioBlob.type); // Certifique-se de que seja 'audio/wav'
-
                 // Enviar o áudio para o backend
                 const formData = new FormData();
-                formData.append('audio', audioBlob, 'audio.wav'); // Certifique-se de que o nome do campo é 'audio'
+                formData.append('audio', audioBlob, 'audio.wav');
 
-                fetch('https://teste-fb8o.onrender.com/upload', {
+                fetch('https://seu-servidor.herokuapp.com/upload', {  // Altere para o URL correto do seu servidor
                     method: 'POST',
                     body: formData,
                 })
                 .then(response => response.json())
                 .then(data => {
                     alert('Áudio enviado com sucesso!');
-                    fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;  // Exibe o nome do arquivo retornado pelo backend
+                    fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;
                 })
                 .catch(error => {
                     console.error('Erro ao enviar áudio:', error);
