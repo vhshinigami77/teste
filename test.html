@@ -50,9 +50,10 @@
         // Função para iniciar a gravação
         recordButton.onclick = async () => {
             try {
+                // Verificando a permissão de acesso ao microfone
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-                // Forçar a gravação no formato WAV
+                // Se o acesso ao microfone for concedido
                 const options = { mimeType: 'audio/wav' };
                 mediaRecorder = new MediaRecorder(stream, options);
 
@@ -69,7 +70,7 @@
                     const formData = new FormData();
                     formData.append('audio', audioBlob, 'audio.wav');
 
-                    fetch('https://teste-fb8o.onrender.com/upload', {  // Altere para o URL correto do seu servidor
+                    fetch('https://seu-servidor.herokuapp.com/upload', {  // Altere para o URL correto do seu servidor
                         method: 'POST',
                         body: formData,
                     })
@@ -89,6 +90,7 @@
                 stopButton.disabled = false; // Habilita o botão de parar a gravação
                 console.log('Gravação iniciada');
             } catch (error) {
+                // Captura os erros de permissão ou outros erros
                 console.error('Erro ao acessar o microfone:', error);
                 alert('Erro ao acessar o microfone. Verifique as permissões.');
             }
