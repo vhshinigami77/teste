@@ -5,6 +5,7 @@ const fs = require('fs');
 const wavDecoder = require('wav-decoder');
 const WavEncoder = require('wav-encoder'); // Para criar um WAV válido
 const cors = require('cors');
+const { parse } = require('json2csv'); // Biblioteca para gerar CSV
 const app = express();
 
 // Habilitar CORS para permitir acesso do frontend
@@ -37,11 +38,6 @@ const upload = multer({
     }
 });
 
-// Rota de verificação do servidor
-app.get('/', (req, res) => {
-    res.send('Servidor está rodando! 🚀');
-});
-
 // Função para processar o áudio
 async function processAudio(filePath) {
     const fileBuffer = fs.readFileSync(filePath);  // Lê o arquivo como buffer
@@ -52,14 +48,38 @@ async function processAudio(filePath) {
         console.log('Audio decodificado com sucesso:', audioData);
 
         // Se o áudio foi decodificado com sucesso, retornamos o caminho original
-        return filePath; 
+        const csvFilePath = await generateCsvFromAudioData(audioData); // Gera o CSV com base nos dados do áudio
+        return { wavFilePath: filePath, csvFilePath };  // Retorna os caminhos do WAV e do CSV
     } catch (error) {
         console.error('Erro ao processar o áudio:', error);
         
         // Caso o WAV esteja corrompido ou não seja válido, recriamos um novo arquivo WAV
         const newFilePath = await createValidWavFile(filePath);
-        return newFilePath;  // Retorna o caminho do novo arquivo WAV válido
+        const audioData = await wavDecoder.decode(fs.readFileSync(newFilePath));
+        const csvFilePath = await generateCsvFromAudioData(audioData); // Gera o CSV com o novo WAV válido
+        return { wavFilePath: newFilePath, csvFilePath };  // Retorna os caminhos do novo WAV e CSV
     }
+}
+
+// Função para gerar um CSV com base nos dados do áudio
+async function generateCsvFromAudioData(audioData) {
+    const { sampleRate, channelData } = audioData;
+    const amplitudeData = channelData[0]; // Vamos processar o primeiro canal de áudio (mono)
+
+    const timeData = amplitudeData.map((amplitude, index) => ({
+        time: index / sampleRate, // O tempo é dado pela posição do sample dividido pela taxa de amostragem
+        amplitude: amplitude
+    }));
+
+    // Converte os dados para CSV
+    const csv = parse(timeData);
+    const csvFilePath = path.join(uploadsDir, `${Date.now()}_audio_data.csv`);
+
+    // Escreve o CSV no arquivo
+    fs.writeFileSync(csvFilePath, csv);
+    console.log('Arquivo CSV gerado com sucesso:', csvFilePath);
+
+    return csvFilePath;
 }
 
 // Função para criar um arquivo WAV válido a partir de amostras (exemplo simples de reconstrução)
@@ -97,10 +117,14 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     try {
         // Processa o áudio depois que ele é enviado
-        const processedFilePath = await processAudio(filePath);  // Processa o arquivo WAV
+        const { wavFilePath, csvFilePath } = await processAudio(filePath);  // Processa o arquivo WAV e gera o CSV
 
         // Retorna a resposta com o caminho do arquivo processado (pode ser o arquivo original ou o corrigido)
-        res.send({ message: 'Áudio recebido e processado com sucesso!', file: fileName, processedFile: processedFilePath });
+        res.send({ 
+            message: 'Áudio recebido e processado com sucesso!', 
+            wavFile: wavFilePath, 
+            csvFile: csvFilePath  // Caminho do arquivo CSV gerado
+        });
     } catch (error) {
         console.error('Erro ao processar o áudio:', error);
         res.status(500).send('Erro ao processar o áudio.');
