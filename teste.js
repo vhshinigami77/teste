@@ -53,7 +53,7 @@ app.get('/convert/:fileName', async (req, res) => {
     const fileName = req.params.fileName;
     const filePath = path.join(__dirname, 'uploads', fileName);
 
-    console.log(`Iniciando a conversão para o arquivo: ${fileName}`);
+    console.log(`Tentando converter o arquivo: ${filePath}`);
 
     if (!fs.existsSync(filePath)) {
         console.log(`Arquivo não encontrado: ${filePath}`);
