@@ -60,6 +60,7 @@ app.get('/convert/:fileName', async (req, res) => {
         const sampleRate = decoded.sampleRate;
         const samples = decoded.channelData[0];
 
+        // Caminho do arquivo txt a ser gerado
         const txtFilePath = path.join(__dirname, 'uploads', 'audio.txt');
         const writeStream = fs.createWriteStream(txtFilePath);
 
@@ -69,10 +70,12 @@ app.get('/convert/:fileName', async (req, res) => {
             writeStream.write(`${time.toFixed(6)} ${sample.toFixed(6)}\n`);
         });
 
-        writeStream.end();
+        // Certifique-se de que a escrita foi concluída antes de responder
+        writeStream.end(() => {
+            console.log('Arquivo .txt gerado com sucesso!');
+            res.send({ message: 'Conversão concluída', file: 'audio.txt' });
+        });
 
-        // Enviar resposta confirmando que a conversão foi realizada
-        res.send({ message: 'Conversão concluída', file: 'audio.txt' });
     } catch (error) {
         console.error('Erro ao processar o arquivo:', error);
         res.status(500).send('Erro interno ao processar o áudio');
