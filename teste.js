@@ -53,18 +53,23 @@ app.get('/convert/:fileName', async (req, res) => {
     const fileName = req.params.fileName;
     const filePath = path.join(__dirname, 'uploads', fileName);
 
+    console.log(`Iniciando a conversão para o arquivo: ${fileName}`);
+
     if (!fs.existsSync(filePath)) {
+        console.log(`Arquivo não encontrado: ${filePath}`);
         return res.status(404).send('Arquivo não encontrado');
     }
 
     try {
         const buffer = fs.readFileSync(filePath);
         console.log('Arquivo .wav lido com sucesso');
-        
+
         // Decodificando o arquivo WAV
         const decoded = await wav.decode(buffer);
         const sampleRate = decoded.sampleRate;
         const samples = decoded.channelData[0];
+
+        console.log('Decodificação concluída, gerando arquivo .txt');
 
         const txtFilePath = path.join(__dirname, 'uploads', 'audio.txt');
         const writeStream = fs.createWriteStream(txtFilePath);
@@ -76,6 +81,7 @@ app.get('/convert/:fileName', async (req, res) => {
         });
 
         writeStream.end();
+        console.log('Arquivo .txt gerado com sucesso');
 
         // Enviar resposta confirmando que a conversão foi realizada
         res.send({ message: 'Conversão concluída', file: 'audio.txt' });
