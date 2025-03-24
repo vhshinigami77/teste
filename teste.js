@@ -53,6 +53,9 @@ app.get('/convert/:fileName', async (req, res) => {
 
     try {
         const buffer = fs.readFileSync(filePath);
+        console.log('Arquivo .wav lido com sucesso');
+        
+        // Decodificando o arquivo WAV
         const decoded = await wav.decode(buffer);
         const sampleRate = decoded.sampleRate;
         const samples = decoded.channelData[0];
@@ -60,6 +63,7 @@ app.get('/convert/:fileName', async (req, res) => {
         const txtFilePath = path.join(__dirname, 'uploads', 'audio.txt');
         const writeStream = fs.createWriteStream(txtFilePath);
 
+        // Gerar arquivo .txt com instantes de tempo e amplitude
         samples.forEach((sample, index) => {
             const time = index / sampleRate;
             writeStream.write(`${time.toFixed(6)} ${sample.toFixed(6)}\n`);
@@ -67,6 +71,7 @@ app.get('/convert/:fileName', async (req, res) => {
 
         writeStream.end();
 
+        // Enviar resposta confirmando que a conversão foi realizada
         res.send({ message: 'Conversão concluída', file: 'audio.txt' });
     } catch (error) {
         console.error('Erro ao processar o arquivo:', error);
