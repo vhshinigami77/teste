@@ -45,7 +45,7 @@ app.post('/upload', upload.single('audio'), (req, res) => {
 
     const fileName = req.file.filename;
     const filePath = path.join(__dirname, 'uploads', fileName);
-    
+
     // Log de informações do arquivo recebido
     console.log(`Áudio recebido: ${fileName}`);
     console.log(`Caminho completo do arquivo: ${filePath}`);
@@ -68,8 +68,8 @@ app.get('/convert/:fileName', async (req, res) => {
         const buffer = fs.readFileSync(filePath);
         console.log('Arquivo .wav lido com sucesso');
 
-        // Verificar se o arquivo é um arquivo WAV válido (começa com 'RIFF')
-        if (buffer.toString('utf-8', 0, 4) !== 'RIFF') {
+        // Verificar se o arquivo começa com o cabeçalho "RIFF" e termina com "WAVE"
+        if (buffer.toString('utf-8', 0, 4) !== 'RIFF' || buffer.toString('utf-8', 8, 12) !== 'WAVE') {
             return res.status(400).send('O arquivo não é um WAV válido.');
         }
 
@@ -78,15 +78,12 @@ app.get('/convert/:fileName', async (req, res) => {
         const sampleRate = decoded.sampleRate;
         const samples = decoded.channelData[0];
 
-        // Verificar se os samples estão sendo lidos corretamente
         console.log(`Taxa de amostragem: ${sampleRate}`);
         console.log(`Número de amostras: ${samples.length}`);
 
-        // Criar caminho para o arquivo .txt
         const txtFilePath = path.join(__dirname, 'uploads', 'audio.txt');
         const writeStream = fs.createWriteStream(txtFilePath);
 
-        // Gerar arquivo .txt com instantes de tempo e amplitude
         samples.forEach((sample, index) => {
             const time = index / sampleRate;
             writeStream.write(`${time.toFixed(6)} ${sample.toFixed(6)}\n`);
@@ -98,7 +95,6 @@ app.get('/convert/:fileName', async (req, res) => {
             console.log('Arquivo .txt gerado com sucesso');
         });
 
-        // Enviar resposta confirmando que a conversão foi realizada
         res.send({ message: 'Conversão concluída', file: 'audio.txt' });
     } catch (error) {
         console.error('Erro ao processar o arquivo:', error);
