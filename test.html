@@ -37,7 +37,7 @@
     <button id="recordButton">Gravar Áudio</button>
     <button id="stopButton" disabled>Parar Gravação</button>
     <audio id="audioPlayer" controls></audio>
-    <p id="fileName"></p> <!-- Exibe o nome do arquivo enviado -->
+    <p id="fileName"></p> <!-- Exibe o nome do arquivo .txt gerado -->
 
     <script>
         let mediaRecorder;
@@ -45,7 +45,7 @@
         const recordButton = document.getElementById('recordButton');
         const stopButton = document.getElementById('stopButton');
         const audioPlayer = document.getElementById('audioPlayer');
-        const fileNameDisplay = document.getElementById('fileName'); // Elemento para exibir o nome do arquivo
+        const fileNameDisplay = document.getElementById('fileName'); // Elemento para exibir o nome do arquivo .txt
 
         // Função para iniciar a gravação
         recordButton.onclick = async () => {
@@ -72,8 +72,8 @@
                 })
                 .then(response => response.json())
                 .then(data => {
-                    alert('Áudio enviado com sucesso!');
-                    fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;  // Exibe o nome do arquivo retornado pelo backend
+                    alert('Áudio enviado e convertido para .txt!');
+                    fileNameDisplay.innerText = `Arquivo .txt gerado: ${data.file}`;  // Exibe o nome do arquivo .txt gerado
                 })
                 .catch(error => {
                     console.error('Erro ao enviar áudio:', error);
