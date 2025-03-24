@@ -68,6 +68,11 @@ app.get('/convert/:fileName', async (req, res) => {
         const buffer = fs.readFileSync(filePath);
         console.log('Arquivo .wav lido com sucesso');
 
+        // Verificar se o arquivo é um arquivo WAV válido (começa com 'RIFF')
+        if (buffer.toString('utf-8', 0, 4) !== 'RIFF') {
+            return res.status(400).send('O arquivo não é um WAV válido.');
+        }
+
         // Decodificando o arquivo WAV
         const decoded = await wav.decode(buffer);
         const sampleRate = decoded.sampleRate;
