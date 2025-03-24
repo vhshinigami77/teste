@@ -49,43 +49,49 @@
 
         // Função para iniciar a gravação
         recordButton.onclick = async () => {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // Forçar a gravação no formato WAV
-            const options = { mimeType: 'audio/wav' };
-            mediaRecorder = new MediaRecorder(stream, options);
+                // Forçar a gravação no formato WAV
+                const options = { mimeType: 'audio/wav' };
+                mediaRecorder = new MediaRecorder(stream, options);
 
-            mediaRecorder.ondataavailable = event => {
-                audioChunks.push(event.data);
-            };
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
 
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                const audioUrl = URL.createObjectURL(audioBlob);
-                audioPlayer.src = audioUrl;
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioPlayer.src = audioUrl;
 
-                // Enviar o áudio para o backend
-                const formData = new FormData();
-                formData.append('audio', audioBlob, 'audio.wav');
+                    // Enviar o áudio para o backend
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob, 'audio.wav');
 
-                fetch('https://teste-fb8o.onrender.com/upload', {  // Altere para o URL correto do seu servidor
-                    method: 'POST',
-                    body: formData,
-                })
-                .then(response => response.json())
-                .then(data => {
-                    alert('Áudio enviado com sucesso!');
-                    fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;
-                })
-                .catch(error => {
-                    console.error('Erro ao enviar áudio:', error);
-                    alert('Erro ao enviar áudio.');
-                });
-            };
+                    fetch('https://teste-fb8o.onrender.com/upload', {  // Altere para o URL correto do seu servidor
+                        method: 'POST',
+                        body: formData,
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert('Áudio enviado com sucesso!');
+                        fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;
+                    })
+                    .catch(error => {
+                        console.error('Erro ao enviar áudio:', error);
+                        alert('Erro ao enviar áudio.');
+                    });
+                };
 
-            mediaRecorder.start();
-            recordButton.disabled = true;
-            stopButton.disabled = false; // Habilita o botão de parar a gravação
+                mediaRecorder.start();
+                recordButton.disabled = true;
+                stopButton.disabled = false; // Habilita o botão de parar a gravação
+                console.log('Gravação iniciada');
+            } catch (error) {
+                console.error('Erro ao acessar o microfone:', error);
+                alert('Erro ao acessar o microfone. Verifique as permissões.');
+            }
         };
 
         // Função para parar a gravação
@@ -93,6 +99,7 @@
             mediaRecorder.stop();
             recordButton.disabled = false;
             stopButton.disabled = true; // Desabilita o botão de parar após a gravação ser parada
+            console.log('Gravação parada');
         };
     </script>
 </body>
