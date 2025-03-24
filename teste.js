@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const wavDecoder = require('wav-decoder'); // Importando o wav-decoder
+const wavDecoder = require('wav-decoder');
 const cors = require('cors');
 const app = express();
 
@@ -25,7 +25,16 @@ const storage = multer.diskStorage({
         cb(null, `${Date.now()}${ext}`); // Nomeia o arquivo com timestamp para evitar conflitos
     }
 });
-const upload = multer({ storage });
+const upload = multer({
+    storage,
+    fileFilter: (req, file, cb) => {
+        // Verifica se o arquivo é um WAV válido
+        if (file.mimetype !== 'audio/wav') {
+            return cb(new Error('Somente arquivos WAV são permitidos.'));
+        }
+        cb(null, true);
+    }
+});
 
 // Rota de verificação do servidor
 app.get('/', (req, res) => {
