@@ -31,51 +31,43 @@ app.get('/', (req, res) => {
     res.send('Servidor está rodando! 🚀');
 });
 
-// Rota para upload do áudio
-app.post('/upload', upload.single('audio'), (req, res) => {
+// Rota para upload do áudio e conversão para .txt
+app.post('/upload', upload.single('audio'), async (req, res) => {
     if (!req.file) {
         return res.status(400).send('Nenhum arquivo enviado.');
     }
 
     const fileName = req.file.filename;
     console.log(`Áudio recebido e salvo como: ${fileName}`);
-    res.send({ message: 'Áudio recebido com sucesso!', file: fileName });
-});
-
-// Rota para converter .wav para .txt
-app.get('/convert/:fileName', async (req, res) => {
-    const fileName = req.params.fileName;
-    const filePath = path.join(__dirname, 'uploads', fileName);
-
-    if (!fs.existsSync(filePath)) {
-        return res.status(404).send('Arquivo não encontrado');
-    }
 
     try {
+        // Lê o arquivo de áudio .wav
+        const filePath = path.join(__dirname, 'uploads', fileName);
         const buffer = fs.readFileSync(filePath);
-        console.log('Arquivo .wav lido com sucesso');
         
-        // Decodificando o arquivo WAV
+        // Decodifica o arquivo WAV
         const decoded = await wav.decode(buffer);
         const sampleRate = decoded.sampleRate;
         const samples = decoded.channelData[0];
 
-        // Caminho do arquivo txt a ser gerado
-        const txtFilePath = path.join(__dirname, 'uploads', 'audio.txt');
+        // Define o caminho do arquivo .txt
+        const txtFileName = `${fileName.replace(path.extname(fileName), '.txt')}`;
+        const txtFilePath = path.join(__dirname, 'uploads', txtFileName);
         const writeStream = fs.createWriteStream(txtFilePath);
 
-        // Gerar arquivo .txt com instantes de tempo e amplitude
+        // Converte o áudio para o formato .txt (tempo e amplitude)
         samples.forEach((sample, index) => {
             const time = index / sampleRate;
             writeStream.write(`${time.toFixed(6)} ${sample.toFixed(6)}\n`);
         });
 
-        // Certifique-se de que a escrita foi concluída antes de responder
-        writeStream.end(() => {
-            console.log('Arquivo .txt gerado com sucesso!');
-            res.send({ message: 'Conversão concluída', file: 'audio.txt' });
-        });
+        writeStream.end();
 
+        // Envia a resposta com o nome do arquivo .txt gerado
+        res.send({
+            message: 'Áudio recebido e convertido para .txt com sucesso!',
+            file: txtFileName
+        });
     } catch (error) {
         console.error('Erro ao processar o arquivo:', error);
         res.status(500).send('Erro interno ao processar o áudio');
