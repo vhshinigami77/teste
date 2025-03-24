@@ -37,7 +37,7 @@
     <button id="recordButton">Gravar Áudio</button>
     <button id="stopButton" disabled>Parar Gravação</button>
     <audio id="audioPlayer" controls></audio>
-    <p id="fileName"></p> <!-- Exibe o nome do arquivo .txt gerado -->
+    <p id="fileName"></p> <!-- Exibe o nome do arquivo enviado -->
 
     <script>
         let mediaRecorder;
@@ -45,7 +45,7 @@
         const recordButton = document.getElementById('recordButton');
         const stopButton = document.getElementById('stopButton');
         const audioPlayer = document.getElementById('audioPlayer');
-        const fileNameDisplay = document.getElementById('fileName'); // Elemento para exibir o nome do arquivo .txt
+        const fileNameDisplay = document.getElementById('fileName'); // Elemento para exibir o nome do arquivo
 
         // Função para iniciar a gravação
         recordButton.onclick = async () => {
@@ -61,19 +61,21 @@
                 const audioUrl = URL.createObjectURL(audioBlob);
                 audioPlayer.src = audioUrl;
 
+                // Verificar o tipo MIME do arquivo
+                console.log('Tipo MIME do arquivo:', audioBlob.type); // Certifique-se de que seja 'audio/wav'
+
                 // Enviar o áudio para o backend
                 const formData = new FormData();
                 formData.append('audio', audioBlob, 'audio.wav'); // Certifique-se de que o nome do campo é 'audio'
 
-                // Substitua pela URL real do backend hospedado no Render
                 fetch('https://teste-fb8o.onrender.com/upload', {
                     method: 'POST',
                     body: formData,
                 })
                 .then(response => response.json())
                 .then(data => {
-                    alert('Áudio enviado e convertido para .txt!');
-                    fileNameDisplay.innerText = `Arquivo .txt gerado: ${data.file}`;  // Exibe o nome do arquivo .txt gerado
+                    alert('Áudio enviado com sucesso!');
+                    fileNameDisplay.innerText = `Nome do arquivo: ${data.file}`;  // Exibe o nome do arquivo retornado pelo backend
                 })
                 .catch(error => {
                     console.error('Erro ao enviar áudio:', error);
