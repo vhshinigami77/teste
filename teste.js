@@ -31,31 +31,45 @@ app.get('/', (req, res) => {
     res.send('Servidor está rodando! 🚀');
 });
 
-// Rota para upload do áudio e conversão para .txt
-app.post('/upload', upload.single('audio'), async (req, res) => {
+// Rota para upload do áudio
+app.post('/upload', upload.single('audio'), (req, res) => {
     if (!req.file) {
         return res.status(400).send('Nenhum arquivo enviado.');
     }
 
+    // Verificar o tipo MIME do arquivo enviado
+    const fileType = req.file.mimetype;
+    if (fileType !== 'audio/wav') {
+        return res.status(400).send('O arquivo enviado não é um WAV válido.');
+    }
+
     const fileName = req.file.filename;
     console.log(`Áudio recebido e salvo como: ${fileName}`);
+    res.send({ message: 'Áudio recebido com sucesso!', file: fileName });
+});
+
+// Rota para converter .wav para .txt
+app.get('/convert/:fileName', async (req, res) => {
+    const fileName = req.params.fileName;
+    const filePath = path.join(__dirname, 'uploads', fileName);
+
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).send('Arquivo não encontrado');
+    }
 
     try {
-        // Lê o arquivo de áudio .wav
-        const filePath = path.join(__dirname, 'uploads', fileName);
         const buffer = fs.readFileSync(filePath);
+        console.log('Arquivo .wav lido com sucesso');
         
-        // Decodifica o arquivo WAV
+        // Decodificando o arquivo WAV
         const decoded = await wav.decode(buffer);
         const sampleRate = decoded.sampleRate;
         const samples = decoded.channelData[0];
 
-        // Define o caminho do arquivo .txt
-        const txtFileName = `${fileName.replace(path.extname(fileName), '.txt')}`;
-        const txtFilePath = path.join(__dirname, 'uploads', txtFileName);
+        const txtFilePath = path.join(__dirname, 'uploads', 'audio.txt');
         const writeStream = fs.createWriteStream(txtFilePath);
 
-        // Converte o áudio para o formato .txt (tempo e amplitude)
+        // Gerar arquivo .txt com instantes de tempo e amplitude
         samples.forEach((sample, index) => {
             const time = index / sampleRate;
             writeStream.write(`${time.toFixed(6)} ${sample.toFixed(6)}\n`);
@@ -63,11 +77,8 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
         writeStream.end();
 
-        // Envia a resposta com o nome do arquivo .txt gerado
-        res.send({
-            message: 'Áudio recebido e convertido para .txt com sucesso!',
-            file: txtFileName
-        });
+        // Enviar resposta confirmando que a conversão foi realizada
+        res.send({ message: 'Conversão concluída', file: 'audio.txt' });
     } catch (error) {
         console.error('Erro ao processar o arquivo:', error);
         res.status(500).send('Erro interno ao processar o áudio');
