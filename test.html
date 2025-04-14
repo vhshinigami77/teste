@@ -1,78 +1,74 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gravar e Enviar Áudio</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
-        button { padding: 10px 20px; margin: 10px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        #audioPlayer { margin-top: 20px; }
-        p { margin-top: 20px; font-size: 18px; }
-        a { display: block; margin-top: 20px; color: #007bff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gravar e Enviar Áudio</title>
+  <style>
+    body { font-family: Arial; padding: 20px; background-color: #f4f4f4; }
+    button { padding: 10px 20px; margin: 10px; border-radius: 5px; background-color: #4CAF50; color: white; border: none; }
+    button:disabled { background-color: #ccc; }
+    audio { margin-top: 20px; }
+    p, a { margin-top: 20px; display: block; }
+  </style>
 </head>
 <body>
-<h1>Gravar e Enviar Áudio</h1>
-<button id="recordButton">Gravar Áudio</button>
-<button id="stopButton" disabled>Parar Gravação</button>
-<audio id="audioPlayer" controls></audio>
-<p id="fileName"></p>
-<div id="csvLinkContainer"></div>
+  <h1>Gravar e Enviar Áudio</h1>
+  <button id="recordButton">Gravar</button>
+  <button id="stopButton" disabled>Parar</button>
+  <audio id="audioPlayer" controls></audio>
+  <div id="csvLinkContainer"></div>
 
-<script>
+  <script>
     let mediaRecorder, audioChunks = [];
     const recordButton = document.getElementById('recordButton');
     const stopButton = document.getElementById('stopButton');
     const audioPlayer = document.getElementById('audioPlayer');
-    const fileNameDisplay = document.getElementById('fileName');
     const csvLinkContainer = document.getElementById('csvLinkContainer');
 
     recordButton.onclick = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
 
-        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-        mediaRecorder.onstop = () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-            const audioUrl = URL.createObjectURL(audioBlob);
-            audioPlayer.src = audioUrl;
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
 
-            const formData = new FormData();
-            formData.append('audio', audioBlob, 'audio.wav');
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audioPlayer.src = audioUrl;
 
-            fetch('https://SEU_SUBDOMINIO_ON_RENDER.onrender.com/upload', {
-                method: 'POST',
-                body: formData,
-            })
-            .then(res => res.json())
-            .then(data => {
-                fileNameDisplay.innerText = 'Áudio processado com sucesso!';
-                const csvLink = document.createElement('a');
-                csvLink.href = `https://SEU_SUBDOMINIO_ON_RENDER.onrender.com${data.csvFile}`;
-                csvLink.textContent = 'Baixar CSV com dados do áudio';
-                csvLinkContainer.innerHTML = '';
-                csvLinkContainer.appendChild(csvLink);
-            })
-            .catch(error => {
-                console.error('Erro ao enviar áudio:', error);
-                alert('Erro ao enviar áudio.');
-            });
-        };
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'audio.webm');
 
-        audioChunks = [];
-        mediaRecorder.start();
-        recordButton.disabled = true;
-        stopButton.disabled = false;
+        fetch('https://teste-fb8o.onrender.com/upload', {
+          method: 'POST',
+          body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+          const csvLink = document.createElement('a');
+          csvLink.href = `https://teste-fb8o.onrender.com${data.csvFile}`;
+          csvLink.textContent = 'Baixar CSV do áudio';
+          csvLinkContainer.innerHTML = '';
+          csvLinkContainer.appendChild(csvLink);
+        })
+        .catch(err => {
+          console.error('Erro:', err);
+          alert('Erro ao enviar o áudio.');
+        });
+      };
+
+      mediaRecorder.start();
+      recordButton.disabled = true;
+      stopButton.disabled = false;
     };
 
     stopButton.onclick = () => {
-        mediaRecorder.stop();
-        recordButton.disabled = false;
-        stopButton.disabled = true;
+      mediaRecorder.stop();
+      recordButton.disabled = false;
+      stopButton.disabled = true;
     };
-</script>
+  </script>
 </body>
 </html>
