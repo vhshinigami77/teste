@@ -59,7 +59,10 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       const channelData = result.channelData[0]; // mono
       const sampleRate = result.sampleRate;
 
-      // Gerar os dados para o arquivo .txt, ignorando valores inválidos
+      // Verificar se as amostras de áudio têm valores diferentes de zero
+      console.log("Primeiras 10 amostras de áudio:", channelData.slice(0, 10)); // Log das primeiras amostras
+
+      // Gerar os dados para o arquivo .txt
       const data = channelData.map((amplitude, index) => {
         const time = (index / sampleRate).toFixed(6);  // Instante de tempo
         const amplitudeValue = amplitude.toFixed(6);   // Amplitude
