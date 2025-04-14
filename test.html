@@ -23,6 +23,7 @@
     const downloadDiv = document.getElementById('download');
     const audioElement = document.getElementById('audio');
 
+    // Iniciar gravação de áudio
     recordBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       recorder = new MediaRecorder(stream);
@@ -32,8 +33,14 @@
       recorder.onstop = async () => {
         audioBlob = new Blob(chunks, { type: 'audio/webm' });
         status.textContent = "Áudio gravado. Enviando automaticamente...";
-        
-        // Enviar automaticamente o áudio após a gravação
+
+        // Reproduzir o áudio gravado para o usuário
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audioElement.src = audioUrl;
+        audioElement.style.display = 'block';  // Exibir o player de áudio
+        audioElement.play();  // Reproduzir o áudio
+
+        // Enviar o áudio gravado para o servidor
         const formData = new FormData();
         formData.append('audio', audioBlob, 'gravacao.webm');
 
@@ -47,14 +54,9 @@
 
           const json = await response.json();
           status.textContent = "Processamento concluído!";
-          
+
           // Mostrar o link para download do TXT
           downloadDiv.innerHTML = `<a href="https://teste-fb8o.onrender.com${json.downloadUrl}" target="_blank">Baixar TXT</a>`;
-
-          // Reproduzir áudio gravado
-          const audioUrl = URL.createObjectURL(audioBlob);
-          audioElement.src = audioUrl;
-          audioElement.style.display = 'block'; // Mostrar o player de áudio
         } catch (err) {
           status.textContent = "Erro ao enviar: " + err.message;
         }
@@ -66,6 +68,7 @@
       stopBtn.disabled = false;
     };
 
+    // Parar gravação de áudio
     stopBtn.onclick = () => {
       recorder.stop();
       recordBtn.disabled = false;
