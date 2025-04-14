@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 10000;
 // Pasta para uploads
 const upload = multer({ dest: 'uploads/' });
 app.use(cors());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));  // Servir arquivos da pasta uploads
+app.use('/files', express.static(path.join(__dirname, 'uploads')));  // Servir arquivos da pasta uploads
 
 // Rota principal
 app.get('/', (req, res) => {
@@ -58,7 +58,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       console.log(`CSV gerado em: ${csvPath}`);
 
       // Enviar link para o frontend
-      const fileUrl = `/uploads/${path.basename(csvPath)}`;
+      const fileUrl = `/files/${path.basename(csvPath)}`;
       res.json({ downloadUrl: fileUrl });
 
     } catch (error) {
