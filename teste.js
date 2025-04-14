@@ -9,15 +9,17 @@ const wav = require('node-wav');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Pasta para uploads
 const upload = multer({ dest: 'uploads/' });
-
 app.use(cors());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));  // Servir arquivos da pasta uploads
 
+// Rota principal
 app.get('/', (req, res) => {
   res.send('Servidor online e pronto para receber áudio!');
 });
 
+// Upload + Processamento
 app.post('/upload', upload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).send('Nenhum arquivo enviado.');
 
@@ -25,78 +27,74 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   const wavPath = `${inputPath}.wav`;
   const txtPath = `${inputPath}_audio_data.txt`;
 
-  console.log(`Iniciando conversão de: ${req.file.originalname}`);
+  // Converter para WAV usando FFmpeg
+  const ffmpeg = spawn('ffmpeg', ['-y', '-i', inputPath, '-ac', '1', '-ar', '44100', wavPath]);
 
-  // Conversão para WAV com aumento de volume
-  const ffmpeg = spawn('ffmpeg', [
-    '-y',
-    '-i', inputPath,
-    '-ac', '1',
-    '-ar', '44100',
-    '-filter:a', 'volume=10dB',
-    wavPath
-  ]);
-
-  ffmpeg.stderr.on('data', data => console.log(`FFmpeg: ${data.toString()}`));
+  ffmpeg.stderr.on('data', data => console.log(`FFmpeg stderr: ${data}`));
 
   ffmpeg.on('close', (code) => {
     if (code !== 0) {
-      console.error(`FFmpeg falhou (código ${code})`);
-      return res.status(500).send(`Erro na conversão FFmpeg (código ${code})`);
+      return res.status(500).send(`Erro na conversão FFmpeg: código ${code}`);
     }
 
+    // Verificar se o arquivo WAV foi gerado corretamente
     if (!fs.existsSync(wavPath)) {
-      console.error('Erro: Arquivo WAV não encontrado.');
-      return res.status(500).send('Erro: WAV não gerado.');
+      return res.status(500).send('Erro: Arquivo WAV não foi gerado.');
     }
 
+    // Ler o WAV e processar
     try {
       const buffer = fs.readFileSync(wavPath);
       const result = wav.decode(buffer);
 
-      console.log(`Decodificado: ${result.sampleRate} Hz, canais: ${result.channelData.length}`);
+      // Verificar a estrutura do resultado da decodificação
+      console.log('Resultado da Decodificação do WAV:', result);
 
+      // Verificar se os dados de canal são válidos
       if (!result || !result.channelData || result.channelData.length === 0) {
-        console.error("Erro ao decodificar: dados de canal ausentes.");
+        console.error("Erro: Nenhum dado de canal encontrado.");
         return res.status(500).send('Erro ao decodificar o áudio.');
       }
 
-      const channelData = result.channelData[0]; // Mono
+      const channelData = result.channelData[0]; // mono
       const sampleRate = result.sampleRate;
 
-      if (!channelData || channelData.length === 0) {
-        console.error("Erro: Nenhum dado de áudio encontrado.");
-        return res.status(500).send('Erro: Nenhum dado de áudio encontrado.');
-      }
-
+      // Gerar os dados para o arquivo .txt, ignorando valores inválidos
       const data = channelData.map((amplitude, index) => {
-        const time = (index / sampleRate).toFixed(6);
-        const amplitudeValue = amplitude.toFixed(6);
-        return `${time}\t${amplitudeValue}`;
-      }).join('\n');
+        const time = (index / sampleRate).toFixed(6);  // Instante de tempo
+        const amplitudeValue = amplitude.toFixed(6);   // Amplitude
 
+        // Verificar se o valor de amplitude é um número válido
+        if (isNaN(amplitudeValue) || Math.abs(amplitudeValue) > 1) {
+          console.error(`Valor de amplitude inválido na amostra ${index}: ${amplitudeValue}`);
+          return null; // Ignorar amostras inválidas
+        }
+
+        return `${time}\t${amplitudeValue}`;  // Formatar como duas colunas: tempo e amplitude
+      }).filter(Boolean).join('\n'); // Remover valores nulos e criar o conteúdo do arquivo
+
+      // Verificar se o arquivo .txt foi gerado corretamente
       if (!data || data.length === 0) {
-        console.error("Erro: Dados inválidos gerados para o TXT.");
+        console.error("Erro: Nenhum dado válido foi escrito no arquivo .txt.");
         return res.status(500).send('Erro: Nenhum dado válido foi gerado para o arquivo .txt.');
       }
 
+      // Escrever os dados no arquivo .txt
       fs.writeFileSync(txtPath, data);
-      console.log(`✅ Arquivo TXT gerado: ${txtPath}`);
 
+      console.log(`Arquivo .txt gerado em: ${txtPath}`);
+
+      // Enviar link para o frontend
       const fileUrl = `/uploads/${path.basename(txtPath)}`;
       res.json({ downloadUrl: fileUrl });
 
-      // ⚠️ Opcional: limpar arquivos temporários depois de enviar o link
-      // fs.unlinkSync(inputPath);
-      // fs.unlinkSync(wavPath);
-
     } catch (error) {
-      console.error("Erro no processamento do áudio:", error);
+      console.error("Erro ao processar o áudio:", error);
       res.status(500).send("Erro ao processar o áudio.");
     }
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando em: http://localhost:${PORT}`);
+  console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
