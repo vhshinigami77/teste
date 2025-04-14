@@ -5,111 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gravar e Enviar Áudio</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-            background-color: #f4f4f4;
-        }
-        button {
-            padding: 10px 20px;
-            margin: 10px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
-        #audioPlayer {
-            margin-top: 20px;
-        }
-        p {
-            margin-top: 20px;
-            font-size: 18px;
-        }
-        a {
-            display: block;
-            margin-top: 20px;
-            color: #007bff;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
+        button { padding: 10px 20px; margin: 10px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #audioPlayer { margin-top: 20px; }
+        p { margin-top: 20px; font-size: 18px; }
+        a { display: block; margin-top: 20px; color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
-    <h1>Gravar e Enviar Áudio</h1>
-    <button id="recordButton">Gravar Áudio</button>
-    <button id="stopButton" disabled>Parar Gravação</button>
-    <audio id="audioPlayer" controls></audio>
-    <p id="fileName"></p> <!-- Exibe o nome do arquivo enviado -->
-    <div id="csvLinkContainer"></div> <!-- Link para o arquivo CSV -->
+<h1>Gravar e Enviar Áudio</h1>
+<button id="recordButton">Gravar Áudio</button>
+<button id="stopButton" disabled>Parar Gravação</button>
+<audio id="audioPlayer" controls></audio>
+<p id="fileName"></p>
+<div id="csvLinkContainer"></div>
 
-    <script>
-        let mediaRecorder;
-        let audioChunks = [];
-        const recordButton = document.getElementById('recordButton');
-        const stopButton = document.getElementById('stopButton');
-        const audioPlayer = document.getElementById('audioPlayer');
-        const fileNameDisplay = document.getElementById('fileName'); // Elemento para exibir o nome do arquivo
-        const csvLinkContainer = document.getElementById('csvLinkContainer'); // Elemento para exibir o link para o CSV
+<script>
+    let mediaRecorder, audioChunks = [];
+    const recordButton = document.getElementById('recordButton');
+    const stopButton = document.getElementById('stopButton');
+    const audioPlayer = document.getElementById('audioPlayer');
+    const fileNameDisplay = document.getElementById('fileName');
+    const csvLinkContainer = document.getElementById('csvLinkContainer');
 
-        // Função para iniciar a gravação
-        recordButton.onclick = async () => {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
+    recordButton.onclick = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
 
-            mediaRecorder.ondataavailable = event => {
-                audioChunks.push(event.data);
-            };
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            audioPlayer.src = audioUrl;
 
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                const audioUrl = URL.createObjectURL(audioBlob);
-                audioPlayer.src = audioUrl;
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'audio.wav');
 
-                // Enviar o áudio para o backend
-                const formData = new FormData();
-                formData.append('audio', audioBlob, 'audio.wav'); // Certifique-se de que o nome do campo é 'audio'
-
-                // Substitua pela URL real do backend hospedado no Render
-                fetch('https://teste-fb8o.onrender.com/upload', {
-                    method: 'POST',
-                    body: formData,
-                })
-                .then(response => response.json())
-                .then(data => {
-                    alert('Áudio enviado com sucesso!');
-                    fileNameDisplay.innerText = `Nome do arquivo: ${data.wavFile}`;
-
-                    // Exibe o link para o arquivo CSV gerado
-                    const dataFileLink = document.createElement('a');
-                    dataFileLink.href = `https://teste-fb8o.onrender.com/uploads/${data.csvFile.split('/').pop()}`;
-                    dataFileLink.textContent = 'Baixar CSV com os dados do áudio';
-                    csvLinkContainer.innerHTML = ''; // Limpa qualquer link anterior
-                    csvLinkContainer.appendChild(dataFileLink);
-                })
-                .catch(error => {
-                    console.error('Erro ao enviar áudio:', error);
-                    alert('Erro ao enviar áudio.');
-                });
-            };
-
-            mediaRecorder.start();
-            recordButton.disabled = true;
-            stopButton.disabled = false;
+            fetch('https://SEU_SUBDOMINIO_ON_RENDER.onrender.com/upload', {
+                method: 'POST',
+                body: formData,
+            })
+            .then(res => res.json())
+            .then(data => {
+                fileNameDisplay.innerText = 'Áudio processado com sucesso!';
+                const csvLink = document.createElement('a');
+                csvLink.href = `https://SEU_SUBDOMINIO_ON_RENDER.onrender.com${data.csvFile}`;
+                csvLink.textContent = 'Baixar CSV com dados do áudio';
+                csvLinkContainer.innerHTML = '';
+                csvLinkContainer.appendChild(csvLink);
+            })
+            .catch(error => {
+                console.error('Erro ao enviar áudio:', error);
+                alert('Erro ao enviar áudio.');
+            });
         };
 
-        // Função para parar a gravação
-        stopButton.onclick = () => {
-            mediaRecorder.stop();
-            recordButton.disabled = false;
-            stopButton.disabled = true;
-        };
-    </script>
+        audioChunks = [];
+        mediaRecorder.start();
+        recordButton.disabled = true;
+        stopButton.disabled = false;
+    };
+
+    stopButton.onclick = () => {
+        mediaRecorder.stop();
+        recordButton.disabled = false;
+        stopButton.disabled = true;
+    };
+</script>
 </body>
 </html>
