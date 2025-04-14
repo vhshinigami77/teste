@@ -47,17 +47,32 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       const buffer = fs.readFileSync(wavPath);
       const result = wav.decode(buffer);
 
-      // Verificar se o arquivo foi lido corretamente
+      // Verificar se a decodificação foi bem-sucedida
       if (!result || !result.channelData || result.channelData.length === 0) {
-        return res.status(500).send('Erro ao ler os dados de áudio do arquivo WAV.');
+        console.error("Erro ao decodificar o áudio, dados de canal ausentes.");
+        return res.status(500).send('Erro ao decodificar o áudio.');
       }
 
       const channelData = result.channelData[0]; // mono
       const sampleRate = result.sampleRate;
 
+      // Verificar se os dados do canal são válidos
+      if (!channelData || channelData.length === 0) {
+        console.error("Erro: Nenhum dado de áudio encontrado.");
+        return res.status(500).send('Erro: Nenhum dado de áudio encontrado.');
+      }
+
       // Gerar os dados para o arquivo .txt
       const data = channelData.map((amplitude, index) => {
-        return `${(index / sampleRate).toFixed(6)}\t${amplitude.toFixed(6)}`;
+        const time = (index / sampleRate).toFixed(6);
+        const amplitudeValue = amplitude.toFixed(6);
+        
+        // Verificar se o valor de amplitude é um número válido
+        if (isNaN(amplitudeValue)) {
+          console.error(`Valor de amplitude inválido na amostra ${index}: ${amplitudeValue}`);
+        }
+
+        return `${time}\t${amplitudeValue}`;
       }).join('\n');
 
       // Escrever os dados no arquivo .txt
