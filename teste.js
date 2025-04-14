@@ -75,6 +75,12 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
         return `${time}\t${amplitudeValue}`;
       }).join('\n');
 
+      // Verificar se o arquivo .txt foi gerado corretamente
+      if (!data || data.length === 0) {
+        console.error("Erro: Nenhum dado válido foi escrito no arquivo .txt.");
+        return res.status(500).send('Erro: Nenhum dado válido foi gerado para o arquivo .txt.');
+      }
+
       // Escrever os dados no arquivo .txt
       fs.writeFileSync(txtPath, data);
 
