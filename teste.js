@@ -4,7 +4,6 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { parse } = require('json2csv');
 const wav = require('node-wav');
 
 const app = express();
@@ -26,7 +25,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
   const inputPath = req.file.path;
   const wavPath = `${inputPath}.wav`;
-  const csvPath = `${inputPath}_audio_data.csv`;
+  const txtPath = `${inputPath}_audio_data.txt`;
 
   // Converter para WAV usando FFmpeg
   const ffmpeg = spawn('ffmpeg', ['-y', '-i', inputPath, '-ac', '1', '-ar', '44100', wavPath]);
@@ -56,20 +55,18 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       const channelData = result.channelData[0]; // mono
       const sampleRate = result.sampleRate;
 
-      // Gerar os dados para o CSV
-      const data = channelData.map((amplitude, index) => ({
-        time: (index / sampleRate).toFixed(6),
-        amplitude: amplitude.toFixed(6)
-      }));
+      // Gerar os dados para o arquivo .txt
+      const data = channelData.map((amplitude, index) => {
+        return `${(index / sampleRate).toFixed(6)}\t${amplitude.toFixed(6)}`;
+      }).join('\n');
 
-      // Converter para CSV
-      const csv = parse(data, { fields: ['time', 'amplitude'] });
-      fs.writeFileSync(csvPath, csv);
+      // Escrever os dados no arquivo .txt
+      fs.writeFileSync(txtPath, data);
 
-      console.log(`CSV gerado em: ${csvPath}`);
+      console.log(`Arquivo .txt gerado em: ${txtPath}`);
 
       // Enviar link para o frontend
-      const fileUrl = `/uploads/${path.basename(csvPath)}`;
+      const fileUrl = `/uploads/${path.basename(txtPath)}`;
       res.json({ downloadUrl: fileUrl });
 
     } catch (error) {
