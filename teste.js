@@ -47,6 +47,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       const buffer = fs.readFileSync(wavPath);
       const result = wav.decode(buffer);
 
+      // Log para verificar a estrutura do resultado da decodificação
+      console.log('Resultado da Decodificação do WAV:', result);
+
       // Verificar se a decodificação foi bem-sucedida
       if (!result || !result.channelData || result.channelData.length === 0) {
         console.error("Erro ao decodificar o áudio, dados de canal ausentes.");
