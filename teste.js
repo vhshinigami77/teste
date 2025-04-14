@@ -14,11 +14,12 @@ app.use(cors());
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir);
+    console.log('Pasta de uploads criada:', uploadsDir);
 }
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/');
+        cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
         const ext = path.extname(file.originalname) || '.webm';
@@ -29,19 +30,27 @@ const upload = multer({ storage });
 
 async function convertToWav(inputPath, outputPath) {
     return new Promise((resolve, reject) => {
+        console.log(`Iniciando conversão: ${inputPath} -> ${outputPath}`);
+
         const ffmpeg = spawn(ffmpegPath, [
-            '-i', inputPath,
-            '-ar', '44100',
-            '-ac', '1',
-            '-f', 'wav',
+            '-y',                 // sobrescreve se já existir
+            '-i', inputPath,      // arquivo de entrada
+            '-ar', '44100',       // taxa de amostragem
+            '-ac', '1',           // mono
+            '-f', 'wav',          // formato WAV
             outputPath
         ]);
 
-        ffmpeg.on('close', code => {
+        ffmpeg.stderr.on('data', (data) => {
+            console.error(`FFmpeg stderr: ${data}`);
+        });
+
+        ffmpeg.on('close', (code) => {
             if (code === 0) {
+                console.log('Conversão para WAV concluída.');
                 resolve(outputPath);
             } else {
-                reject(new Error(`FFmpeg exited with code ${code}`));
+                reject(new Error(`FFmpeg falhou com código ${code}`));
             }
         });
     });
@@ -54,41 +63,40 @@ async function processAudio(originalPath) {
         await convertToWav(originalPath, wavPath);
         const fileBuffer = fs.readFileSync(wavPath);
         const audioData = await wavDecoder.decode(fileBuffer);
-        const csvPath = await generateCsvFromAudioData(audioData);
+
+        const { sampleRate, channelData } = audioData;
+        const amplitudeData = channelData[0];
+
+        const timeData = amplitudeData.map((amplitude, index) => ({
+            time: index / sampleRate,
+            amplitude: amplitude
+        }));
+
+        const csv = parse(timeData);
+        const csvPath = path.join(uploadsDir, `${Date.now()}_audio_data.csv`);
+        fs.writeFileSync(csvPath, csv);
+
+        console.log('CSV gerado em:', csvPath);
         return { wavFilePath: wavPath, csvFilePath: csvPath };
+
     } catch (error) {
-        console.error('Erro no processamento FFmpeg/WAV:', error);
+        console.error('Erro ao processar o áudio:', error);
         throw error;
     }
 }
 
-async function generateCsvFromAudioData(audioData) {
-    const { sampleRate, channelData } = audioData;
-    const amplitudeData = channelData[0];
-
-    const timeData = amplitudeData.map((amplitude, index) => ({
-        time: index / sampleRate,
-        amplitude: amplitude
-    }));
-
-    const csv = parse(timeData);
-    const csvPath = path.join(uploadsDir, `${Date.now()}_audio_data.csv`);
-    fs.writeFileSync(csvPath, csv);
-    console.log('CSV gerado em:', csvPath);
-
-    return csvPath;
-}
-
 app.post('/upload', upload.single('audio'), async (req, res) => {
     if (!req.file) {
+        console.error('Nenhum arquivo recebido.');
         return res.status(400).send('Nenhum arquivo enviado.');
     }
 
-    try {
-        const filePath = path.join(uploadsDir, req.file.filename);
-        const { wavFilePath, csvFilePath } = await processAudio(filePath);
+    const filePath = path.join(uploadsDir, req.file.filename);
+    console.log('Arquivo recebido:', filePath);
 
-        res.send({
+    try {
+        const { wavFilePath, csvFilePath } = await processAudio(filePath);
+        res.json({
             message: 'Áudio processado com sucesso!',
             wavFile: `/uploads/${path.basename(wavFilePath)}`,
             csvFile: `/uploads/${path.basename(csvFilePath)}`
