@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 10000;
 // Pasta para uploads
 const upload = multer({ dest: 'uploads/' });
 app.use(cors());
-app.use('/files', express.static(path.join(__dirname, 'uploads')));  // Servir arquivos da pasta uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));  // Servir arquivos da pasta uploads
 
 // Rota principal
 app.get('/', (req, res) => {
@@ -38,14 +38,25 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       return res.status(500).send(`Erro na conversão FFmpeg: código ${code}`);
     }
 
+    // Verificar se o arquivo WAV foi gerado corretamente
+    if (!fs.existsSync(wavPath)) {
+      return res.status(500).send('Erro: Arquivo WAV não foi gerado.');
+    }
+
     // Ler o WAV e processar
     try {
       const buffer = fs.readFileSync(wavPath);
       const result = wav.decode(buffer);
 
+      // Verificar se o arquivo foi lido corretamente
+      if (!result || !result.channelData || result.channelData.length === 0) {
+        return res.status(500).send('Erro ao ler os dados de áudio do arquivo WAV.');
+      }
+
       const channelData = result.channelData[0]; // mono
       const sampleRate = result.sampleRate;
 
+      // Gerar os dados para o CSV
       const data = channelData.map((amplitude, index) => ({
         time: (index / sampleRate).toFixed(6),
         amplitude: amplitude.toFixed(6)
@@ -58,7 +69,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       console.log(`CSV gerado em: ${csvPath}`);
 
       // Enviar link para o frontend
-      const fileUrl = `/files/${path.basename(csvPath)}`;
+      const fileUrl = `/uploads/${path.basename(csvPath)}`;
       res.json({ downloadUrl: fileUrl });
 
     } catch (error) {
