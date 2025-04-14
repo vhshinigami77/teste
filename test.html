@@ -5,70 +5,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gravar e Enviar Áudio</title>
   <style>
-    body { font-family: Arial; padding: 20px; background-color: #f4f4f4; }
-    button { padding: 10px 20px; margin: 10px; border-radius: 5px; background-color: #4CAF50; color: white; border: none; }
-    button:disabled { background-color: #ccc; }
-    audio { margin-top: 20px; }
-    p, a { margin-top: 20px; display: block; }
+    body { font-family: Arial; padding: 20px; background: #fafafa; }
+    button { padding: 10px 20px; margin: 5px; border-radius: 5px; border: none; background: #4CAF50; color: white; cursor: pointer; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    audio { margin-top: 20px; display: block; }
   </style>
 </head>
 <body>
-  <h1>Gravar e Enviar Áudio</h1>
-  <button id="recordButton">Gravar</button>
-  <button id="stopButton" disabled>Parar</button>
-  <audio id="audioPlayer" controls></audio>
-  <div id="csvLinkContainer"></div>
 
-  <script>
-    let mediaRecorder, audioChunks = [];
-    const recordButton = document.getElementById('recordButton');
-    const stopButton = document.getElementById('stopButton');
-    const audioPlayer = document.getElementById('audioPlayer');
-    const csvLinkContainer = document.getElementById('csvLinkContainer');
+<h1>Gravar e Enviar Áudio</h1>
+<button id="recordButton">Gravar</button>
+<button id="stopButton" disabled>Parar</button>
+<audio id="audioPlayer" controls></audio>
+<div id="csvLinkContainer"></div>
 
-    recordButton.onclick = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
+<script>
+  let mediaRecorder, audioChunks = [];
+  const recordButton = document.getElementById('recordButton');
+  const stopButton = document.getElementById('stopButton');
+  const audioPlayer = document.getElementById('audioPlayer');
+  const csvLinkContainer = document.getElementById('csvLinkContainer');
 
-      audioChunks = [];
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+  recordButton.onclick = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        audioPlayer.src = audioUrl;
+    mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
 
-        const formData = new FormData();
-        formData.append('audio', audioBlob, 'audio.webm');
+    mediaRecorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      audioPlayer.src = audioUrl;
 
-        fetch('https://teste-fb8o.onrender.com/upload', {
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'audio.webm');
+
+      try {
+        const response = await fetch('https://teste-fb8o.onrender.com/upload', {
           method: 'POST',
           body: formData
-        })
-        .then(res => res.json())
-        .then(data => {
-          const csvLink = document.createElement('a');
-          csvLink.href = `https://teste-fb8o.onrender.com${data.csvFile}`;
-          csvLink.textContent = 'Baixar CSV do áudio';
-          csvLinkContainer.innerHTML = '';
-          csvLinkContainer.appendChild(csvLink);
-        })
-        .catch(err => {
-          console.error('Erro:', err);
-          alert('Erro ao enviar o áudio.');
         });
-      };
 
-      mediaRecorder.start();
-      recordButton.disabled = true;
-      stopButton.disabled = false;
+        if (!response.ok) throw new Error('Falha no upload!');
+
+        const data = await response.json();
+        const csvLink = document.createElement('a');
+        csvLink.href = `https://teste-fb8o.onrender.com${data.csvFile}`;
+        csvLink.textContent = 'Baixar CSV';
+        csvLinkContainer.innerHTML = '';
+        csvLinkContainer.appendChild(csvLink);
+
+      } catch (error) {
+        console.error('Erro no envio:', error);
+        alert('Falha ao enviar ou processar o áudio!');
+      }
     };
 
-    stopButton.onclick = () => {
-      mediaRecorder.stop();
-      recordButton.disabled = false;
-      stopButton.disabled = true;
-    };
-  </script>
+    mediaRecorder.start();
+    recordButton.disabled = true;
+    stopButton.disabled = false;
+  };
+
+  stopButton.onclick = () => {
+    mediaRecorder.stop();
+    recordButton.disabled = false;
+    stopButton.disabled = true;
+  };
+</script>
+
 </body>
 </html>
