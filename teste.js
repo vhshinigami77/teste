@@ -28,8 +28,8 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   const wavPath = `${inputPath}.wav`;
   const datPath = `${inputPath}_audio_data.dat`;
 
-  // Comando FFmpeg — conversão para .wav em 44100Hz e mono
-  const ffmpeg = spawn('ffmpeg', ['-y', '-i', inputPath, '-ac', '1', '-ar', '44100', wavPath]);
+  // Comando FFmpeg — conversão para .wav com 16-bit e 44100Hz mono
+  const ffmpeg = spawn('ffmpeg', ['-y', '-i', inputPath, '-ac', '1', '-ar', '44100', '-sample_fmt', 's16', wavPath]);
 
   ffmpeg.stderr.on('data', data => console.log(`FFmpeg stderr: ${data}`));
 
