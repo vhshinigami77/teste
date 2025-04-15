@@ -9,6 +9,7 @@ const upload = multer({ dest: 'uploads/' });
 
 app.use(express.static('uploads'));  // Servir arquivos processados
 
+// Endpoint para upload de áudio
 app.post('/upload', upload.single('audio'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado!' });
@@ -39,6 +40,24 @@ app.post('/upload', upload.single('audio'), (req, res) => {
   });
 });
 
-// 💡 ALTERAÇÃO AQUI:
+// 💡 Limpeza automática de arquivos antigos (para não estourar espaço no Render)
+setInterval(() => {
+  fs.readdir('uploads', (err, files) => {
+    if (err) return;
+    const agora = Date.now();
+    files.forEach(file => {
+      const filePath = path.join('uploads', file);
+      fs.stat(filePath, (err, stats) => {
+        if (!err && agora - stats.mtimeMs > 1000 * 60 * 10) {  // +10 minutos
+          fs.unlink(filePath, () => {
+            console.log(`Arquivo deletado: ${filePath}`);
+          });
+        }
+      });
+    });
+  });
+}, 1000 * 60 * 10);  // Roda a cada 10 minutos
+
+// Configurar porta correta (Render usa process.env.PORT)
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor online na porta ${PORT}`));
