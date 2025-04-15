@@ -3,8 +3,7 @@ const multer = require('multer');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
-const wav = require('node-wav');
+const audioread = require('audioread');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -25,60 +24,54 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).send('Nenhum arquivo enviado.');
 
   const inputPath = req.file.path;
-  const wavPath = `${inputPath}.wav`;
   const datPath = `${inputPath}_audio_data.dat`;
 
-  // Comando FFmpeg — conversão para .wav com 16-bit e 44100Hz mono
-  const ffmpeg = spawn('ffmpeg', ['-y', '-i', inputPath, '-ac', '1', '-ar', '44100', '-sample_fmt', 's16', wavPath]);
+  // Abrir o arquivo de áudio com audioread
+  const stream = fs.createReadStream(inputPath);
+  const reader = audioread(stream);
 
-  ffmpeg.stderr.on('data', data => console.log(`FFmpeg stderr: ${data}`));
+  let channelData = [];
+  let sampleRate = reader.sampleRate;
 
-  ffmpeg.on('close', (code) => {
-    if (code !== 0) {
-      console.error(`Erro na conversão FFmpeg: código ${code}`);
-      return res.status(500).send(`Erro na conversão do áudio: código ${code}`);
+  // Ler os dados do arquivo de áudio
+  reader.on('data', (chunk) => {
+    channelData = channelData.concat(chunk);
+  });
+
+  reader.on('end', () => {
+    console.log('Leitura do áudio concluída.');
+
+    if (!channelData || channelData.length === 0) {
+      console.error("Erro: Dados do canal inválidos ou vazios.");
+      return res.status(500).send('Erro: Dados do canal inválidos.');
     }
 
-    if (!fs.existsSync(wavPath)) {
-      console.error('Erro: Arquivo WAV não foi gerado.');
-      return res.status(500).send('Erro: Arquivo WAV não encontrado.');
-    }
-
-    try {
-      const buffer = fs.readFileSync(wavPath);
-      const result = wav.decode(buffer);
-
-      console.log('Resultado da Decodificação do WAV:', result);
-
-      if (!result || !result.channelData || result.channelData.length === 0 || !result.channelData[0]) {
-        console.error("Erro: Dados do canal inválidos ou vazios.");
-        return res.status(500).send('Erro: Dados do canal inválidos.');
+    // Processamento dos dados de áudio
+    const data = channelData.map((amplitude, index) => {
+      if (isNaN(amplitude)) {
+        console.error(`Amostra inválida na posição ${index}: ${amplitude}`);
+        amplitude = 0;  // Substitui por 0 em caso de NaN
       }
+      const time = (index / sampleRate).toFixed(6);     // tempo em segundos
+      const amplitudeValue = amplitude.toFixed(6);      // amplitude normalizada
+      return `${time}\t${amplitudeValue}`;
+    }).join('\n');
 
-      const channelData = result.channelData[0]; // mono
-      const sampleRate = result.sampleRate;
-
-      const data = channelData.map((amplitude, index) => {
-        const time = (index / sampleRate).toFixed(6);     // tempo em segundos
-        const amplitudeValue = amplitude.toFixed(6);      // amplitude normalizada
-        return `${time}\t${amplitudeValue}`;
-      }).join('\n');
-
-      if (!data || data.length === 0) {
-        console.error("Erro: Nenhum dado válido foi gerado.");
-        return res.status(500).send('Erro ao gerar o arquivo .dat.');
-      }
-
-      fs.writeFileSync(datPath, data);
-      console.log(`Arquivo .dat gerado em: ${datPath}`);
-
-      const fileUrl = `/uploads/${path.basename(datPath)}`;
-      res.json({ downloadUrl: fileUrl });
-
-    } catch (error) {
-      console.error("Erro ao processar o áudio:", error);
-      res.status(500).send("Erro ao processar o áudio.");
+    if (!data || data.length === 0) {
+      console.error("Erro: Nenhum dado válido foi gerado.");
+      return res.status(500).send('Erro ao gerar o arquivo .dat.');
     }
+
+    fs.writeFileSync(datPath, data);
+    console.log(`Arquivo .dat gerado em: ${datPath}`);
+
+    const fileUrl = `/uploads/${path.basename(datPath)}`;
+    res.json({ downloadUrl: fileUrl });
+  });
+
+  reader.on('error', (err) => {
+    console.error("Erro ao processar o arquivo de áudio:", err);
+    res.status(500).send("Erro ao processar o áudio.");
   });
 });
 
