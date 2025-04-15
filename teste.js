@@ -7,7 +7,12 @@ const { spawn } = require('child_process');
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
-app.use(express.static('uploads'));  // Servir arquivos processados
+// Permitir CORS para o frontend
+const cors = require('cors');
+app.use(cors());
+
+// Servir arquivos processados
+app.use(express.static('uploads'));
 
 app.post('/upload', upload.single('audio'), (req, res) => {
   if (!req.file) {
@@ -36,8 +41,10 @@ app.post('/upload', upload.single('audio'), (req, res) => {
     const txtPath = `${inputPath}.txt`;
     fs.writeFileSync(txtPath, 'Áudio processado com sucesso!');
 
-    res.json({ downloadUrl: `/${path.basename(txtPath)}` });
+    res.json({ downloadUrl: `/uploads/${path.basename(txtPath)}` });
   });
 });
 
-app.listen(3000, () => console.log('Servidor online na porta 3000'));
+// Usar process.env.PORT para garantir que o Render aloque a porta corretamente
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Servidor online na porta ${PORT}`));
