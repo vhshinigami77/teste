@@ -3,24 +3,13 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const cors = require('cors');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
-// Permitir CORS apenas para o seu frontend
-const corsOptions = {
-  origin: 'https://teste-2-2.onrender.com',  // O domínio do seu frontend
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-  credentials: true, // Se necessário para enviar cookies ou cabeçalhos personalizados
-};
-
-app.use(cors(corsOptions));  // Aplicar CORS com as opções configuradas
-
-// Servir arquivos processados
+// Servir arquivos da pasta 'uploads' para que possam ser acessados
 app.use(express.static('uploads'));
 
-// Rota para upload de áudio
 app.post('/upload', upload.single('audio'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado!' });
@@ -48,10 +37,9 @@ app.post('/upload', upload.single('audio'), (req, res) => {
     const txtPath = `${inputPath}.txt`;
     fs.writeFileSync(txtPath, 'Áudio processado com sucesso!');
 
+    // Corrigir o caminho para servir corretamente o arquivo .txt
     res.json({ downloadUrl: `/uploads/${path.basename(txtPath)}` });
   });
 });
 
-// Usar process.env.PORT para garantir que o Render aloque a porta corretamente
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor online na porta ${PORT}`));
+app.listen(3000, () => console.log('Servidor online na porta 3000'));
