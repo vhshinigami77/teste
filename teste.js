@@ -3,17 +3,24 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const cors = require('cors');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
-// Permitir CORS para o frontend
-const cors = require('cors');
-app.use(cors());
+// Permitir CORS apenas para o seu frontend
+const corsOptions = {
+  origin: 'https://teste-2-2.onrender.com',  // O domínio do seu frontend
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  credentials: true, // Se necessário para enviar cookies ou cabeçalhos personalizados
+};
+
+app.use(cors(corsOptions));  // Aplicar CORS com as opções configuradas
 
 // Servir arquivos processados
 app.use(express.static('uploads'));
 
+// Rota para upload de áudio
 app.post('/upload', upload.single('audio'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado!' });
