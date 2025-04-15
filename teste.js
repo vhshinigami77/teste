@@ -40,7 +40,7 @@ app.post('/upload', upload.single('audio'), (req, res) => {
   });
 });
 
-// 💡 Limpeza automática de arquivos antigos (para não estourar espaço no Render)
+// Limpeza automática de arquivos antigos para evitar exceder o espaço disponível no Render
 setInterval(() => {
   fs.readdir('uploads', (err, files) => {
     if (err) return;
@@ -58,6 +58,8 @@ setInterval(() => {
   });
 }, 1000 * 60 * 10);  // Roda a cada 10 minutos
 
-// Configurar porta correta (Render usa process.env.PORT)
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Servidor online na porta ${PORT}`));
+// Usar a variável de ambiente PORT, caso disponível, ou qualquer porta disponível
+const PORT = process.env.PORT || 0; // 0 permite que o sistema escolha uma porta disponível automaticamente
+app.listen(PORT, () => {
+  console.log(`Servidor online na porta ${PORT}`);
+});
