@@ -1,72 +1,85 @@
 const express = require('express');
-const multer = require('multer');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const multer = require('multer');
 const { spawn } = require('child_process');
+const fs = require('fs');
+const wav = require('node-wav');
+const { Parser } = require('json2csv');
+const path = require('path');
+const ffmpegPath = require('ffmpeg-static');
 
 const app = express();
-const PORT = process.env.PORT || 10000;
-
-// Configuração do multer para uploads
-const upload = multer({ dest: 'uploads/' });
+const PORT = 10000;
 
 app.use(cors());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(express.static('uploads'));
 
-app.get('/', (req, res) => {
-  res.send('Servidor online e pronto para receber áudio!');
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/');
+  },
+  filename: function (req, file, cb) {
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+    cb(null, uniqueName);
+  }
 });
 
-app.post('/upload', upload.single('audio'), async (req, res) => {
-  if (!req.file) return res.status(400).send('Nenhum arquivo enviado.');
+const upload = multer({ storage: storage });
+
+app.post('/upload', upload.single('audio'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('Nenhum arquivo foi enviado.');
+  }
 
   const inputPath = req.file.path;
   const wavPath = `${inputPath}.wav`;
   const datPath = `${inputPath}_audio_data.dat`;
+  const csvPath = `${inputPath}_audio_data.csv`;
 
-  // Conversão usando FFmpeg de qualquer formato para WAV
-  const ffmpeg = spawn('ffmpeg', [
-    '-y', // overwrite
-    '-i', inputPath, // entrada: qualquer formato (ogg, webm, opus...)
-    '-ac', '1', // forçar mono
-    '-ar', '44100', // sample rate
-    wavPath // saída
+  // ffmpeg conversion
+  const ffmpeg = spawn(ffmpegPath, [
+    '-y',
+    '-i', inputPath,
+    '-ac', '1',
+    '-ar', '44100',
+    wavPath
   ]);
 
-  ffmpeg.stderr.on('data', data => console.log(`FFmpeg stderr: ${data}`));
+  ffmpeg.stderr.on('data', data => console.error(`FFmpeg stderr: ${data}`));
+  ffmpeg.on('error', error => {
+    console.error(`Erro ao iniciar ffmpeg: ${error.message}`);
+    res.status(500).send('Erro ao processar o áudio.');
+  });
 
   ffmpeg.on('close', code => {
     if (code !== 0) {
-      console.error(`Erro na conversão FFmpeg: código ${code}`);
-      return res.status(500).send(`Erro na conversão do áudio: código ${code}`);
+      console.error(`FFmpeg falhou com código ${code}`);
+      return res.status(500).send('Falha na conversão do áudio.');
     }
 
-    if (!fs.existsSync(wavPath)) {
-      console.error('Erro: Arquivo WAV não foi gerado.');
-      return res.status(500).send('Erro: Arquivo WAV não encontrado.');
+    // Decodifica WAV
+    try {
+      const buffer = fs.readFileSync(wavPath);
+      const result = wav.decode(buffer);
+
+      console.log('Resultado da Decodificação:', result);
+
+      const audioData = result.channelData[0]; // Assume mono
+      fs.writeFileSync(datPath, Buffer.from(new Float32Array(audioData).buffer));
+
+      // CSV export
+      const json = audioData.map((value, index) => ({ index, value }));
+      const csv = new Parser({ fields: ['index', 'value'] }).parse(json);
+      fs.writeFileSync(csvPath, csv);
+
+      res.json({ datFile: datPath, csvFile: csvPath });
+    } catch (err) {
+      console.error('Erro ao processar WAV:', err);
+      res.status(500).send('Erro ao processar o arquivo WAV.');
     }
-
-    // Após conversão, processar com SoX ou outro
-    const sox = spawn('sox', [
-      wavPath, datPath, 'stat'
-    ]);
-
-    sox.stderr.on('data', data => console.log(`SoX stderr: ${data}`));
-
-    sox.on('close', soxCode => {
-      if (soxCode !== 0) {
-        console.error(`Erro na conversão Sox: código ${soxCode}`);
-        return res.status(500).send(`Erro no processamento com SoX.`);
-      }
-
-      console.log(`Arquivo processado com SoX e salvo em: ${datPath}`);
-      const fileUrl = `/uploads/${path.basename(datPath)}`;
-      res.json({ downloadUrl: fileUrl });
-    });
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
