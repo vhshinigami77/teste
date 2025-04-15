@@ -45,6 +45,7 @@
         formData.append('audio', audioBlob, 'gravacao.ogg');
 
         try {
+          // Alterando a URL para o seu servidor Render
           const response = await fetch('https://teste-2-vg14.onrender.com/upload', {
             method: 'POST',
             body: formData
