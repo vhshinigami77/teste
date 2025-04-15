@@ -7,14 +7,8 @@ const { spawn } = require('child_process');
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
-// Configurar CORS para permitir requisições do frontend
-const cors = require('cors');
-app.use(cors());
+app.use(express.static('uploads'));  // Servir arquivos processados
 
-// Servir arquivos estáticos (ex: arquivos processados)
-app.use(express.static('uploads'));  
-
-// Rota de upload de áudio
 app.post('/upload', upload.single('audio'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado!' });
@@ -23,10 +17,7 @@ app.post('/upload', upload.single('audio'), (req, res) => {
   const inputPath = req.file.path;
   const outputWav = `${inputPath}.wav`;
 
-  const ffmpeg = spawn('ffmpeg', [
-    '-y', '-i', inputPath,
-    '-ac', '1', '-ar', '44100', outputWav
-  ]);
+  const ffmpeg = spawn('ffmpeg', ['-y', '-i', inputPath, '-ac', '1', '-ar', '44100', outputWav]);
 
   ffmpeg.stderr.on('data', data => {
     console.log(`FFmpeg: ${data}`);
@@ -38,7 +29,6 @@ app.post('/upload', upload.single('audio'), (req, res) => {
       return res.status(500).json({ error: 'Falha ao converter áudio.' });
     }
 
-    // Simula processamento: gera arquivo .txt
     const txtPath = `${inputPath}.txt`;
     fs.writeFileSync(txtPath, 'Áudio processado com sucesso!');
 
@@ -46,8 +36,6 @@ app.post('/upload', upload.single('audio'), (req, res) => {
   });
 });
 
-// Iniciar o servidor na porta 10000
+// PORTA ajustada para Render
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`Servidor ouvindo na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Servidor online na porta ${PORT}`));
