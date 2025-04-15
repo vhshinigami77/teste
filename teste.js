@@ -7,9 +7,14 @@ const { spawn } = require('child_process');
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
-// Servir arquivos da pasta 'uploads' para que possam ser acessados
-app.use(express.static('uploads'));
+// Configurar CORS para permitir requisições do frontend
+const cors = require('cors');
+app.use(cors());
 
+// Servir arquivos estáticos (ex: arquivos processados)
+app.use(express.static('uploads'));  
+
+// Rota de upload de áudio
 app.post('/upload', upload.single('audio'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado!' });
@@ -37,9 +42,12 @@ app.post('/upload', upload.single('audio'), (req, res) => {
     const txtPath = `${inputPath}.txt`;
     fs.writeFileSync(txtPath, 'Áudio processado com sucesso!');
 
-    // Corrigir o caminho para servir corretamente o arquivo .txt
-    res.json({ downloadUrl: `/uploads/${path.basename(txtPath)}` });
+    res.json({ downloadUrl: `/${path.basename(txtPath)}` });
   });
 });
 
-app.listen(3000, () => console.log('Servidor online na porta 3000'));
+// Iniciar o servidor na porta 10000
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`Servidor ouvindo na porta ${PORT}`);
+});
