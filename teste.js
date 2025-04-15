@@ -9,21 +9,20 @@ const ffmpegPath = require('ffmpeg-static');
 const { spawn } = require('child_process');
 
 const app = express();
+const PORT = process.env.PORT || 10000;
+
+// Pasta para uploads
+const upload = multer({ dest: 'uploads/' });
+app.use(cors());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));  // Servir arquivos da pasta uploads
+
 const uploadsDir = path.join(__dirname, 'uploads');
 
-// Configuração do CORS
-app.use(cors());
-
-// Middleware para servir arquivos da pasta uploads
-app.use('/uploads', express.static(uploadsDir));
-
-// Criar a pasta de uploads caso ela não exista
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir);
     console.log('Pasta de uploads criada:', uploadsDir);
 }
 
-// Configuração do Multer para armazenamento dos arquivos
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, uploadsDir);
@@ -34,12 +33,17 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ storage });
+// Rota principal
+app.get('/', (req, res) => {
+    res.send('Servidor online e pronto para receber áudio!');
+});
 
-// Função para converter o áudio para o formato WAV usando FFmpeg
+const uploadMiddleware = multer({ storage });
+
 async function convertToWav(inputPath, outputPath) {
     return new Promise((resolve, reject) => {
         console.log(`Iniciando conversão: ${inputPath} -> ${outputPath}`);
+
         const ffmpeg = spawn(ffmpegPath, [
             '-y',                 // sobrescreve se já existir
             '-i', inputPath,      // arquivo de entrada
@@ -64,58 +68,73 @@ async function convertToWav(inputPath, outputPath) {
     });
 }
 
-// Rota principal
-app.get('/', (req, res) => {
-    res.send('Servidor online e pronto para receber áudio!');
-});
+async function processAudio(originalPath) {
+    const wavPath = originalPath.replace(path.extname(originalPath), '.wav');
 
-// Rota de upload e processamento de áudio
-app.post('/upload', upload.single('audio'), async (req, res) => {
+    try {
+        await convertToWav(originalPath, wavPath);
+
+        const fileBuffer = fs.readFileSync(wavPath);
+        const audioData = await wavDecoder.decode(fileBuffer);
+
+        // Verifique se o channelData está presente
+        if (!audioData.channelData || audioData.channelData.length === 0) {
+            throw new Error('Nenhum dado de áudio encontrado no arquivo WAV.');
+        }
+
+        const { sampleRate, channelData } = audioData;
+
+        // Agora é seguro acessar channelData[0]
+        const amplitudeData = channelData[0];
+
+        // Log para depuração (opcional)
+        console.log('AudioData:', audioData);
+        console.log('Sample Rate:', sampleRate);
+        console.log('Channel Data (first channel):', amplitudeData);
+
+        // Gerar os dados de tempo e amplitude
+        const timeData = amplitudeData.map((amplitude, index) => ({
+            time: index / sampleRate,
+            amplitude: amplitude
+        }));
+
+        const csv = parse(timeData);
+        const csvPath = path.join(uploadsDir, `${Date.now()}_audio_data.csv`);
+
+        // Salvar o CSV
+        fs.writeFileSync(csvPath, csv);
+        console.log(`CSV gerado em: ${csvPath}`);
+
+        return { wavFilePath: wavPath, csvFilePath: csvPath };
+
+    } catch (error) {
+        console.error('Erro ao processar o áudio:', error);
+        throw error;
+    }
+}
+
+// Rota para upload de áudio
+app.post('/upload', uploadMiddleware.single('audio'), async (req, res) => {
     if (!req.file) {
         return res.status(400).send('Nenhum arquivo enviado.');
     }
 
     const inputPath = req.file.path;
-    const wavPath = `${inputPath}.wav`;
 
     try {
-        // Converter o arquivo para WAV
-        await convertToWav(inputPath, wavPath);
+        const { wavFilePath, csvFilePath } = await processAudio(inputPath);
 
-        // Ler o arquivo WAV e processar os dados
-        const buffer = fs.readFileSync(wavPath);
-        const result = wavDecoder.decode(buffer);
-
-        const channelData = result.channelData[0]; // mono
-        const sampleRate = result.sampleRate;
-
-        // Mapear os dados de amplitude e tempo
-        const timeData = channelData.map((amplitude, index) => ({
-            time: (index / sampleRate).toFixed(6),
-            amplitude: amplitude.toFixed(6)
-        }));
-
-        // Gerar o CSV
-        const csv = parse(timeData, { fields: ['time', 'amplitude'] });
-        const csvPath = path.join(uploadsDir, `${Date.now()}_audio_data.csv`);
-        fs.writeFileSync(csvPath, csv);
-
-        console.log(`CSV gerado em: ${csvPath}`);
-
-        // Retornar os links para download dos arquivos gerados
         res.json({
             message: 'Áudio processado com sucesso!',
-            wavFile: `/uploads/${path.basename(wavPath)}`,
-            csvFile: `/uploads/${path.basename(csvPath)}`
+            wavFile: `/uploads/${path.basename(wavFilePath)}`,
+            csvFile: `/uploads/${path.basename(csvFilePath)}`
         });
     } catch (error) {
-        console.error('Erro ao processar o áudio:', error);
-        res.status(500).send('Erro ao processar o áudio.');
+        console.error('Erro ao processar áudio:', error);
+        res.status(500).send('Erro ao processar áudio.');
     }
 });
 
-// Iniciar o servidor
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
 });
