@@ -70,6 +70,7 @@ async function convertToWav(inputPath, outputPath) {
 
 async function processAudio(originalPath) {
     const wavPath = originalPath.replace(path.extname(originalPath), '.wav');
+    console.log(`Caminho do arquivo WAV: ${wavPath}`);
 
     try {
         await convertToWav(originalPath, wavPath);
@@ -77,17 +78,14 @@ async function processAudio(originalPath) {
         const fileBuffer = fs.readFileSync(wavPath);
         const audioData = await wavDecoder.decode(fileBuffer);
 
-        // Verifique se o channelData está presente
         if (!audioData.channelData || audioData.channelData.length === 0) {
             throw new Error('Nenhum dado de áudio encontrado no arquivo WAV.');
         }
 
         const { sampleRate, channelData } = audioData;
-
-        // Agora é seguro acessar channelData[0]
         const amplitudeData = channelData[0];
 
-        // Log para depuração (opcional)
+        // Log para depuração
         console.log('AudioData:', audioData);
         console.log('Sample Rate:', sampleRate);
         console.log('Channel Data (first channel):', amplitudeData);
@@ -120,9 +118,13 @@ app.post('/upload', uploadMiddleware.single('audio'), async (req, res) => {
     }
 
     const inputPath = req.file.path;
+    console.log('Arquivo recebido:', inputPath);
 
     try {
         const { wavFilePath, csvFilePath } = await processAudio(inputPath);
+
+        console.log(`WAV gerado: ${wavFilePath}`);
+        console.log(`CSV gerado: ${csvFilePath}`);
 
         res.json({
             message: 'Áudio processado com sucesso!',
