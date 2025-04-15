@@ -17,7 +17,10 @@ app.post('/upload', upload.single('audio'), (req, res) => {
   const inputPath = req.file.path;
   const outputWav = `${inputPath}.wav`;
 
-  const ffmpeg = spawn('ffmpeg', ['-y', '-i', inputPath, '-ac', '1', '-ar', '44100', outputWav]);
+  const ffmpeg = spawn('ffmpeg', [
+    '-y', '-i', inputPath,
+    '-ac', '1', '-ar', '44100', outputWav
+  ]);
 
   ffmpeg.stderr.on('data', data => {
     console.log(`FFmpeg: ${data}`);
@@ -36,6 +39,6 @@ app.post('/upload', upload.single('audio'), (req, res) => {
   });
 });
 
-// PORTA ajustada para Render
+// 💡 ALTERAÇÃO AQUI:
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor online na porta ${PORT}`));
