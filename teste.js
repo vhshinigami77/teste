@@ -25,9 +25,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
   const inputPath = req.file.path;
   const wavPath = `${inputPath}.wav`;
-  const txtPath = `${inputPath}_audio_data.txt`;
+  const datPath = `${inputPath}_audio_data.dat`;
 
-  // Converter para WAV usando FFmpeg
+  // Converter para WAV com taxa de amostragem fixa 44100 Hz e mono
   const ffmpeg = spawn('ffmpeg', ['-y', '-i', inputPath, '-ac', '1', '-ar', '44100', wavPath]);
 
   ffmpeg.stderr.on('data', data => console.log(`FFmpeg stderr: ${data}`));
@@ -37,20 +37,19 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       return res.status(500).send(`Erro na conversão FFmpeg: código ${code}`);
     }
 
-    // Verificar se o arquivo WAV foi gerado corretamente
     if (!fs.existsSync(wavPath)) {
       return res.status(500).send('Erro: Arquivo WAV não foi gerado.');
     }
 
-    // Ler o WAV e processar
     try {
       const buffer = fs.readFileSync(wavPath);
       const result = wav.decode(buffer);
 
-      // Verificar a estrutura do resultado da decodificação
-      console.log('Resultado da Decodificação do WAV:', result);
+      console.log('Resultado da Decodificação do WAV:', {
+        sampleRate: result.sampleRate,
+        numChannels: result.channelData.length
+      });
 
-      // Verificar se os dados de canal são válidos
       if (!result || !result.channelData || result.channelData.length === 0) {
         console.error("Erro: Nenhum dado de canal encontrado.");
         return res.status(500).send('Erro ao decodificar o áudio.');
@@ -59,27 +58,30 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       const channelData = result.channelData[0]; // mono
       const sampleRate = result.sampleRate;
 
-      // Gerar os dados para o arquivo .txt
-      const data = channelData.map((amplitude, index) => {
-        const time = (index / sampleRate).toFixed(6);  // Instante de tempo
-        const amplitudeValue = amplitude.toFixed(6);   // Amplitude
-
-        return `${time}\t${amplitudeValue}`;  // Formatar como duas colunas: tempo e amplitude
-      }).join('\n'); // Criar o conteúdo do arquivo
-
-      // Verificar se o arquivo .txt foi gerado corretamente
-      if (!data || data.length === 0) {
-        console.error("Erro: Nenhum dado válido foi escrito no arquivo .txt.");
-        return res.status(500).send('Erro: Nenhum dado válido foi gerado para o arquivo .txt.');
+      if (!Array.isArray(channelData) || channelData.length === 0) {
+        console.error("Erro: Dados do canal inválidos ou vazios.");
+        return res.status(500).send('Erro: Canal de áudio vazio.');
       }
 
-      // Escrever os dados no arquivo .txt
-      fs.writeFileSync(txtPath, data);
+      // Geração dos dados para o arquivo .dat (tempo\tamplitude)
+      const dataLines = channelData.map((amplitude, index) => {
+        const time = (index / sampleRate).toFixed(6);
+        const amplitudeValue = Number.isFinite(amplitude) ? amplitude.toFixed(6) : 'NaN';
+        return `${time}\t${amplitudeValue}`;
+      });
 
-      console.log(`Arquivo .txt gerado em: ${txtPath}`);
+      // Checagem final para evitar arquivo só com NaNs
+      const validLines = dataLines.filter(line => !line.includes('NaN'));
 
-      // Enviar link para o frontend
-      const fileUrl = `/uploads/${path.basename(txtPath)}`;
+      if (validLines.length === 0) {
+        console.error("Erro: Todos os valores foram NaN. Verifique o fluxo de áudio e o arquivo de entrada.");
+        return res.status(500).send('Erro: Dados inválidos no áudio.');
+      }
+
+      fs.writeFileSync(datPath, dataLines.join('\n'));
+      console.log(`Arquivo .dat gerado com sucesso: ${datPath}`);
+
+      const fileUrl = `/uploads/${path.basename(datPath)}`;
       res.json({ downloadUrl: fileUrl });
 
     } catch (error) {
