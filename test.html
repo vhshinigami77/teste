@@ -57,7 +57,7 @@
           status.textContent = "Processamento concluído!";
 
           // Alteração: Usar o caminho correto do arquivo para download
-          downloadDiv.innerHTML = `<a href="https://teste-fb8o.onrender.com${json.downloadUrl}" target="_blank">Baixar TXT</a>`;
+          downloadDiv.innerHTML = `<a href="https://teste-fb8o.onrender.com/uploads/${json.filename}" target="_blank">Baixar TXT</a>`;
         } catch (err) {
           status.textContent = "Erro ao enviar: " + err.message;
         }
