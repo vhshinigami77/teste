@@ -15,8 +15,8 @@ COPY . .
 # Instalar as dependências do Node.js
 RUN npm install
 
-# Expor a porta que o backend escuta
-EXPOSE 3000
+# Expor a porta 10000 que o backend vai escutar
+EXPOSE 10000
 
 # Comando para iniciar o servidor
 CMD ["npm", "start"]
