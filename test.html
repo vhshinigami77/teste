@@ -41,9 +41,6 @@
         audioElement.src = audioUrl;
         audioElement.style.display = 'block';
 
-        // Removido: auto-play do áudio
-        // audioElement.play();
-
         const formData = new FormData();
         formData.append('audio', audioBlob, 'gravacao.ogg');
 
@@ -58,7 +55,7 @@
           const json = await response.json();
           status.textContent = "Processamento concluído!";
 
-          downloadDiv.innerHTML = `<a href="https://teste-fb8o.onrender.com${json.downloadUrl}" target="_blank">Baixar TXT</a>`;
+          downloadDiv.innerHTML = `<a href="https://teste-2-vg14.onrender.com${json.downloadUrl}" target="_blank">Baixar TXT</a>`;
         } catch (err) {
           status.textContent = "Erro ao enviar: " + err.message;
         }
