@@ -16,6 +16,9 @@
   <script>
     let recorder;
     let audioBlob;
+    let audioContext;
+    let mediaStreamSource;
+    let scriptProcessor;
 
     const recordBtn = document.getElementById('record');
     const stopBtn = document.getElementById('stop');
@@ -26,12 +29,31 @@
     // Iniciar gravação de áudio
     recordBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Criar contexto de áudio
+      audioContext = new AudioContext();
+      mediaStreamSource = audioContext.createMediaStreamSource(stream);
+
+      // Criar processador de áudio para gravar dados em WAV
+      scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1); // Mono
+
+      scriptProcessor.onaudioprocess = function(event) {
+        const inputData = event.inputBuffer.getChannelData(0); // Dados do áudio
+        const outputData = event.outputBuffer.getChannelData(0); // Para enviar para o destino
+        outputData.set(inputData); // Copiar dados de entrada para a saída
+      };
+
+      // Conectar o processador de áudio ao destino
+      mediaStreamSource.connect(scriptProcessor);
+      scriptProcessor.connect(audioContext.destination);
+
+      // Usar o MediaRecorder para capturar os dados
       recorder = new MediaRecorder(stream);
       const chunks = [];
 
       recorder.ondataavailable = e => chunks.push(e.data);
       recorder.onstop = async () => {
-        audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        audioBlob = new Blob(chunks, { type: 'audio/wav' });
         status.textContent = "Áudio gravado. Enviando automaticamente...";
 
         // Reproduzir o áudio gravado para o usuário
@@ -42,7 +64,7 @@
 
         // Enviar o áudio gravado para o servidor
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'gravacao.webm');
+        formData.append('audio', audioBlob, 'gravacao.wav'); // Envia como WAV
 
         try {
           const response = await fetch('https://teste-fb8o.onrender.com/upload', { // URL do seu servidor Render
