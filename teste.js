@@ -23,6 +23,7 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}${path.extname(file.originalname)}`);
   }
 });
+
 const upload = multer({ storage });
 
 app.use(cors());
@@ -38,23 +39,28 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   const txtPath = `${inputPath}_audio_data.txt`;
 
   try {
+    console.log('Iniciando conversão para WAV...');
     await convertToWav(inputPath, wavPath);
+    console.log('Arquivo WAV gerado:', wavPath);
+
     const timeData = await processAudio(wavPath);
+    console.log('Dados extraídos:', timeData.length);
 
-    const lines = ['time\tamplitude'];
-    timeData.forEach(({ time, amplitude }) => {
-      lines.push(`${time}\t${amplitude}`);
+    const lines = timeData.map(({ time, amplitude }) => `${time}\t${amplitude}`);
+    fs.writeFileSync(txtPath, lines.join('\n'));
+    console.log('Arquivo TXT gerado:', txtPath);
+
+    res.json({
+      downloadUrl: `/uploads/${path.basename(txtPath)}`,
+      filename: path.basename(txtPath)
     });
-    fs.writeFileSync(txtPath, lines.join('\n'), 'utf8');
-
-    res.json({ downloadUrl: `/uploads/${path.basename(txtPath)}`, filename: path.basename(txtPath) });
   } catch (error) {
     console.error('Erro ao processar o áudio:', error);
     res.status(500).send('Erro ao processar o áudio.');
   }
 });
 
-function convertToWav(inputPath, outputPath) {
+async function convertToWav(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn(ffmpegPath, [
       '-y',
@@ -71,6 +77,7 @@ function convertToWav(inputPath, outputPath) {
 
     ffmpeg.on('close', (code) => {
       if (code === 0) {
+        console.log('Conversão para WAV concluída.');
         resolve(outputPath);
       } else {
         reject(new Error(`FFmpeg falhou com código ${code}`));
@@ -83,6 +90,11 @@ async function processAudio(wavPath) {
   const fileBuffer = fs.readFileSync(wavPath);
   const audioData = await wavDecoder.decode(fileBuffer);
   const { sampleRate, channelData } = audioData;
+
+  if (!sampleRate || !channelData || !channelData[0]) {
+    throw new Error('Erro ao extrair dados do WAV. Dados inválidos.');
+  }
+
   const amplitudeData = channelData[0];
 
   return amplitudeData.map((amplitude, index) => ({
