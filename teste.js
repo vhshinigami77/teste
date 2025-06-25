@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const wavDecoder = require('wav-decoder');
+const wav = require('node-wav');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 const cors = require('cors');
@@ -88,8 +88,17 @@ async function convertToWav(inputPath, outputPath) {
 
 async function processAudio(wavPath) {
   const fileBuffer = fs.readFileSync(wavPath);
-  const audioData = await wavDecoder.decode(fileBuffer);
-  const { sampleRate, channelData } = audioData;
+  console.log('Tamanho do buffer WAV:', fileBuffer.length);
+
+  const result = wav.decode(fileBuffer);
+  console.log('Dados decodificados:', {
+    sampleRate: result.sampleRate,
+    channelDataLength: result.channelData.length,
+    firstChannelLength: result.channelData[0] ? result.channelData[0].length : 0
+  });
+
+  const sampleRate = result.sampleRate;
+  const channelData = result.channelData;
 
   if (!sampleRate || !channelData || !channelData[0]) {
     throw new Error('Erro ao extrair dados do WAV. Dados inválidos.');
