@@ -97,10 +97,14 @@ async function processAudio(wavPath) {
 
   const amplitudeData = channelData[0];
 
-  return amplitudeData.map((amplitude, index) => ({
-    time: (index / sampleRate).toFixed(6),
-    amplitude: amplitude.toFixed(6)
-  }));
+  return amplitudeData.map((amplitude, index) => {
+    const time = index / sampleRate;
+    const amp = Number.isFinite(amplitude) ? amplitude : 0;
+    return {
+      time: time.toFixed(6),
+      amplitude: amp.toFixed(6)
+    };
+  });
 }
 
 const PORT = process.env.PORT || 3000;
