@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const wav = require('node-wav');
+const wav = require('wav');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 const cors = require('cors');
@@ -87,32 +87,50 @@ async function convertToWav(inputPath, outputPath) {
 }
 
 async function processAudio(wavPath) {
-  const fileBuffer = fs.readFileSync(wavPath);
-  console.log('Tamanho do buffer WAV:', fileBuffer.length);
+  return new Promise((resolve, reject) => {
+    const fileStream = fs.createReadStream(wavPath);
+    const reader = new wav.Reader();
 
-  const result = wav.decode(fileBuffer);
-  console.log('Dados decodificados:', {
-    sampleRate: result.sampleRate,
-    channelDataLength: result.channelData.length,
-    firstChannelLength: result.channelData[0] ? result.channelData[0].length : 0
-  });
+    let sampleRate;
+    let timeData = [];
+    let sampleIndex = 0;
 
-  const sampleRate = result.sampleRate;
-  const channelData = result.channelData;
+    reader.on('format', (format) => {
+      sampleRate = format.sampleRate;
+      if (format.channels !== 1) {
+        console.warn('Aviso: arquivo WAV não é mono. Será usado somente o primeiro canal.');
+      }
+    });
 
-  if (!sampleRate || !channelData || !channelData[0]) {
-    throw new Error('Erro ao extrair dados do WAV. Dados inválidos.');
-  }
+    reader.on('data', (chunk) => {
+      // chunk é um Buffer de samples
+      // Cada sample é 16 bits (2 bytes), little-endian, signed PCM
 
-  const amplitudeData = channelData[0];
+      // Para evitar problema com multi-canais, vamos considerar somente o primeiro canal, assumindo 16 bits PCM mono (1 canal)
 
-  return amplitudeData.map((amplitude, index) => {
-    const time = index / sampleRate;
-    const amp = Number.isFinite(amplitude) ? amplitude : 0;
-    return {
-      time: time.toFixed(6),
-      amplitude: amp.toFixed(6)
-    };
+      for (let i = 0; i < chunk.length; i += 2) {
+        // Leitura do sample 16-bit assinado, little endian
+        let sample = chunk.readInt16LE(i);
+        // normaliza amplitude entre -1 e 1
+        let amplitude = sample / 32768;
+        let time = sampleIndex / sampleRate;
+        timeData.push({
+          time: time.toFixed(6),
+          amplitude: amplitude.toFixed(6)
+        });
+        sampleIndex++;
+      }
+    });
+
+    reader.on('end', () => {
+      resolve(timeData);
+    });
+
+    reader.on('error', (err) => {
+      reject(err);
+    });
+
+    fileStream.pipe(reader);
   });
 }
 
