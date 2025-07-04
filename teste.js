@@ -32,14 +32,15 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
   try {
     await convertToWav(inputPath, wavPath);
-    const timeData = await processAudio(wavPath);
+    const { timeData, sampleRate } = await processAudio(wavPath);
 
     const lines = timeData.map(({ time, amplitude }) => `${time}\t${amplitude}`);
     fs.writeFileSync(txtPath, lines.join('\n'));
 
     res.json({
       downloadUrl: `/uploads/${path.basename(txtPath)}`,
-      samples: timeData.slice(0, 2000) // apenas os primeiros pontos para o gráfico
+      sampleRate, // <-- Inclui taxa de amostragem
+      samples: timeData.slice(0, 2000)
     });
   } catch (err) {
     console.error(err);
@@ -71,8 +72,8 @@ function processAudio(wavPath) {
     const fileStream = fs.createReadStream(wavPath);
     const reader = new wav.Reader();
 
-    let sampleRate;
-    let timeData = [];
+    let sampleRate = 44100;
+    const timeData = [];
     let sampleIndex = 0;
 
     reader.on('format', (format) => {
@@ -84,12 +85,15 @@ function processAudio(wavPath) {
         const sample = chunk.readInt16LE(i);
         const amplitude = sample / 32768;
         const time = sampleIndex / sampleRate;
-        timeData.push({ time: time.toFixed(6), amplitude: amplitude.toFixed(6) });
+        timeData.push({
+          time: parseFloat(time.toFixed(6)),
+          amplitude: parseFloat(amplitude.toFixed(6))
+        });
         sampleIndex++;
       }
     });
 
-    reader.on('end', () => resolve(timeData));
+    reader.on('end', () => resolve({ timeData, sampleRate }));
     reader.on('error', reject);
     fileStream.pipe(reader);
   });
