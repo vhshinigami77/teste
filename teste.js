@@ -38,8 +38,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     res.json({
       downloadUrl: `/uploads/${path.basename(txtPath)}`,
-      samples: timeData, // Envia os pontos reduzidos para o gráfico
-      sampleRate: timeData.length > 1 ? (1 / (timeData[1].time - timeData[0].time)).toFixed(1) : "N/A"
+      samples: timeData
     });
   } catch (err) {
     console.error(err);
@@ -71,31 +70,47 @@ function processAudio(wavPath) {
     const fileStream = fs.createReadStream(wavPath);
     const reader = new wav.Reader();
 
-    let sampleRate;
-    let timeData = [];
+    let sampleRate = 44100; // padrão
+    const blockDuration = 0.1; // segundos
+    let blockSize = 4410; // número de amostras por bloco
+    let currentBlock = [];
     let sampleIndex = 0;
-    let nextTime = 0;
+
+    let averages = [];
 
     reader.on('format', (format) => {
       sampleRate = format.sampleRate;
+      blockSize = Math.floor(sampleRate * blockDuration);
     });
 
     reader.on('data', (chunk) => {
       for (let i = 0; i < chunk.length; i += 2) {
         const sample = chunk.readInt16LE(i);
-        const amplitude = sample / 32768;
-        const time = sampleIndex / sampleRate;
-
-        if (time >= nextTime) {
-          timeData.push({ time: time.toFixed(2), amplitude: amplitude.toFixed(6) });
-          nextTime += 0.1; // 10 centésimos de segundo
-        }
-
+        const amplitude = Math.abs(sample / 32768);
+        currentBlock.push(amplitude);
         sampleIndex++;
+
+        if (currentBlock.length >= blockSize) {
+          const sum = currentBlock.reduce((acc, val) => acc + val, 0);
+          const avg = sum / currentBlock.length;
+          const time = (sampleIndex / sampleRate).toFixed(2);
+          averages.push({ time, amplitude: avg.toFixed(4) });
+          currentBlock = [];
+        }
       }
     });
 
-    reader.on('end', () => resolve(timeData));
+    reader.on('end', () => {
+      if (currentBlock.length > 0) {
+        const sum = currentBlock.reduce((acc, val) => acc + val, 0);
+        const avg = sum / currentBlock.length;
+        const time = (sampleIndex / sampleRate).toFixed(2);
+        averages.push({ time, amplitude: avg.toFixed(4) });
+      }
+
+      resolve(averages);
+    });
+
     reader.on('error', reject);
     fileStream.pipe(reader);
   });
