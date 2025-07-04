@@ -22,7 +22,6 @@ app.use(cors());
 app.use('/uploads', express.static(uploadsDir));
 app.use(express.json());
 
-// Rota de upload e processamento
 app.post('/upload', upload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).send('Nenhum arquivo enviado.');
 
@@ -32,15 +31,15 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
   try {
     await convertToWav(inputPath, wavPath);
-    const { timeData, sampleRate } = await processAudio(wavPath);
+    const timeData = await processAudio(wavPath);
 
     const lines = timeData.map(({ time, amplitude }) => `${time}\t${amplitude}`);
     fs.writeFileSync(txtPath, lines.join('\n'));
 
     res.json({
       downloadUrl: `/uploads/${path.basename(txtPath)}`,
-      sampleRate, // <-- Inclui taxa de amostragem
-      samples: timeData.slice(0, 2000)
+      samples: timeData, // Envia os pontos reduzidos para o gráfico
+      sampleRate: timeData.length > 1 ? (1 / (timeData[1].time - timeData[0].time)).toFixed(1) : "N/A"
     });
   } catch (err) {
     console.error(err);
@@ -72,9 +71,10 @@ function processAudio(wavPath) {
     const fileStream = fs.createReadStream(wavPath);
     const reader = new wav.Reader();
 
-    let sampleRate = 44100;
-    const timeData = [];
+    let sampleRate;
+    let timeData = [];
     let sampleIndex = 0;
+    let nextTime = 0;
 
     reader.on('format', (format) => {
       sampleRate = format.sampleRate;
@@ -85,15 +85,17 @@ function processAudio(wavPath) {
         const sample = chunk.readInt16LE(i);
         const amplitude = sample / 32768;
         const time = sampleIndex / sampleRate;
-        timeData.push({
-          time: parseFloat(time.toFixed(6)),
-          amplitude: parseFloat(amplitude.toFixed(6))
-        });
+
+        if (time >= nextTime) {
+          timeData.push({ time: time.toFixed(2), amplitude: amplitude.toFixed(6) });
+          nextTime += 0.1; // 10 centésimos de segundo
+        }
+
         sampleIndex++;
       }
     });
 
-    reader.on('end', () => resolve({ timeData, sampleRate }));
+    reader.on('end', () => resolve(timeData));
     reader.on('error', reject);
     fileStream.pipe(reader);
   });
