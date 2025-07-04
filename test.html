@@ -4,6 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Gravador de Áudio</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      max-width: 800px;
+      margin: auto;
+    }
+    button {
+      margin-right: 10px;
+      padding: 10px 20px;
+    }
+    canvas {
+      max-width: 100%;
+      margin-top: 20px;
+    }
+  </style>
 </head>
 <body>
   <h1>Gravar Áudio e Enviar</h1>
@@ -12,16 +29,19 @@
   <p id="status"></p>
   <div id="download"></div>
   <audio id="audio" controls></audio>
+  <canvas id="chart"></canvas>
 
   <script>
     let mediaRecorder;
     let audioChunks = [];
+    let chart;
 
     const recordBtn = document.getElementById('record');
     const stopBtn = document.getElementById('stop');
     const status = document.getElementById('status');
     const downloadDiv = document.getElementById('download');
     const audioElement = document.getElementById('audio');
+    const chartCanvas = document.getElementById('chart');
 
     recordBtn.onclick = async () => {
       try {
@@ -29,10 +49,9 @@
           audio: { echoCancellation: true }
         });
 
-        // Cria o AudioContext temporariamente para obter a taxa de amostragem
         const audioContext = new AudioContext();
         const sampleRate = audioContext.sampleRate;
-        audioContext.close(); // libera recursos
+        audioContext.close();
 
         status.textContent = `Gravando com taxa de amostragem: ${sampleRate} Hz`;
 
@@ -63,9 +82,47 @@
             if (!response.ok) throw new Error("Falha ao enviar.");
 
             const json = await response.json();
-            status.textContent = "Processamento concluído!";
+            status.textContent = `Processamento concluído! Taxa de amostragem real: ${json.sampleRate} Hz`;
 
             downloadDiv.innerHTML = `<a href="https://teste-fb8o.onrender.com${json.downloadUrl}" target="_blank">Baixar TXT</a>`;
+
+            if (json.samples && json.samples.length > 0) {
+              const labels = json.samples.map(s => s.time);
+              const data = json.samples.map(s => s.amplitude);
+
+              if (chart) chart.destroy();
+
+              chart = new Chart(chartCanvas, {
+                type: 'line',
+                data: {
+                  labels: labels,
+                  datasets: [{
+                    label: 'Amplitude do Áudio',
+                    data: data,
+                    borderColor: 'blue',
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    tension: 0.1
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  scales: {
+                    x: {
+                      title: { display: true, text: 'Tempo (s)' }
+                    },
+                    y: {
+                      title: { display: true, text: 'Amplitude' },
+                      min: -1,
+                      max: 1
+                    }
+                  },
+                  plugins: {
+                    legend: { display: false }
+                  }
+                }
+              });
+            }
           } catch (err) {
             status.textContent = "Erro ao enviar: " + err.message;
           }
