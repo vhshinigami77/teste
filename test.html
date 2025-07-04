@@ -20,6 +20,8 @@
     let audioContext;
     let recorder;
     let audioData = [];
+    let gainNode;  // NOVO: node para silenciar saída
+    let chartInstance; // para evitar múltiplos gráficos
 
     const recordBtn = document.getElementById("record");
     const stopBtn = document.getElementById("stop");
@@ -28,28 +30,43 @@
     const chartCanvas = document.getElementById("chart");
 
     recordBtn.onclick = async () => {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioContext = new AudioContext({ sampleRate: 44100 });
-      const source = audioContext.createMediaStreamSource(mediaStream);
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new AudioContext({ sampleRate: 44100 });
+        const source = audioContext.createMediaStreamSource(mediaStream);
 
-      recorder = audioContext.createScriptProcessor(4096, 1, 1);
-      source.connect(recorder);
-      recorder.connect(audioContext.destination);
+        recorder = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        // Criar GainNode para evitar eco, ganho 0 = mudo
+        gainNode = audioContext.createGain();
+        gainNode.gain.value = 0;
 
-      audioData = [];
+        // Conectar nodes corretamente
+        source.connect(recorder);
+        recorder.connect(gainNode);
+        gainNode.connect(audioContext.destination);
 
-      recorder.onaudioprocess = (e) => {
-        const input = e.inputBuffer.getChannelData(0);
-        audioData.push(new Float32Array(input));
-      };
+        audioData = [];
 
-      status.textContent = "Gravando em 44kHz...";
-      recordBtn.disabled = true;
-      stopBtn.disabled = false;
+        recorder.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0);
+          // DEBUG: log para garantir que está funcionando
+          console.log("onaudioprocess - buffer length:", input.length);
+          audioData.push(new Float32Array(input));
+        };
+
+        status.textContent = "Gravando em 44kHz...";
+        recordBtn.disabled = true;
+        stopBtn.disabled = false;
+
+      } catch (err) {
+        status.textContent = "Erro ao acessar microfone: " + err.message;
+      }
     };
 
     stopBtn.onclick = async () => {
       recorder.disconnect();
+      gainNode.disconnect();
       audioContext.close();
       mediaStream.getTracks().forEach(track => track.stop());
 
@@ -130,7 +147,11 @@
         amplitudes.push(parseFloat(amp));
       }
 
-      new Chart(chartCanvas, {
+      if (chartInstance) {
+        chartInstance.destroy(); // evita múltiplos gráficos empilhados
+      }
+
+      chartInstance = new Chart(chartCanvas, {
         type: "line",
         data: {
           labels: labels,
