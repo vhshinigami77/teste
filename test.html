@@ -14,9 +14,8 @@
   <canvas id="amplitudeChart" width="600" height="200"></canvas>
   <canvas id="fftChart" width="600" height="200"></canvas>
 
-  <!-- Player de áudio -->
   <audio id="player" controls style="display: none; margin-top: 20px;"></audio>
-  <!-- Status -->
+
   <p id="status" style="font-weight: bold;"></p>
 
   <script>
@@ -25,65 +24,77 @@
 
     const recordBtn = document.getElementById('record');
     const stopBtn = document.getElementById('stop');
+    const statusEl = document.getElementById('status');
+    const sampleRateEl = document.getElementById('sampleRate');
+    const player = document.getElementById('player');
 
     recordBtn.onclick = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm',
-        audioBitsPerSecond: 64000 // 64 kbps para arquivos menores
-      });
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Configurações para MediaRecorder
+        const options = {
+          mimeType: 'audio/webm;codecs=opus', // bom suporte no Chrome/Firefox
+          audioBitsPerSecond: 128000 // 128 kbps (bom equilíbrio)
+        };
 
-      audioChunks = [];
+        mediaRecorder = new MediaRecorder(stream, options);
 
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        audioChunks = [];
 
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const formData = new FormData();
-        formData.append('audio', audioBlob);
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) audioChunks.push(e.data);
+        };
 
-        document.getElementById('status').textContent = '🔄 Enviando...';
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+          console.log('Blob gravado:', audioBlob);
 
-        try {
-          const response = await fetch('https://teste-fb8o.onrender.com/upload', {
-            method: 'POST',
-            body: formData
-          });
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'gravacao.webm');
 
-          if (!response.ok) throw new Error('Falha no upload');
+          statusEl.textContent = '🔄 Enviando...';
 
-          const result = await response.json();
-          document.getElementById('sampleRate').textContent = '44100 Hz';
+          try {
+            const response = await fetch('https://teste-fb8o.onrender.com/upload', {
+              method: 'POST',
+              body: formData
+            });
 
-          drawAmplitudeChart(result.samples);
-          drawFFTChart(result.fft);
+            if (!response.ok) throw new Error('Falha no upload');
 
-          // Mostrar player com áudio gravado
-          const audioUrl = URL.createObjectURL(audioBlob);
-          const player = document.getElementById('player');
-          player.src = audioUrl;
-          player.style.display = 'block';
+            const result = await response.json();
 
-          document.getElementById('status').textContent = '✅ Arquivo enviado com sucesso!';
+            sampleRateEl.textContent = '44100 Hz';
 
-        } catch (err) {
-          document.getElementById('status').textContent = '❌ Erro ao enviar o arquivo.';
-          console.error(err);
-        }
-      };
+            drawAmplitudeChart(result.samples);
+            drawFFTChart(result.fft);
 
-      mediaRecorder.start();
+            // Mostrar player com áudio gravado
+            const audioUrl = URL.createObjectURL(audioBlob);
+            player.src = audioUrl;
+            player.style.display = 'block';
 
-      // Parar gravação automaticamente após 5 segundos
-      setTimeout(() => {
-        if (mediaRecorder.state === 'recording') {
-          mediaRecorder.stop();
-        }
-      }, 5000);
+            statusEl.textContent = '✅ Arquivo enviado com sucesso!';
+          } catch (err) {
+            statusEl.textContent = '❌ Erro ao enviar o arquivo.';
+            console.error(err);
+          }
+        };
 
-      recordBtn.disabled = true;
-      stopBtn.disabled = false;
+        mediaRecorder.start();
+        recordBtn.disabled = true;
+        stopBtn.disabled = false;
+
+        // Parar automaticamente após 5 segundos
+        setTimeout(() => {
+          if (mediaRecorder.state === 'recording') mediaRecorder.stop();
+        }, 5000);
+
+      } catch (err) {
+        statusEl.textContent = '❌ Erro ao acessar o microfone.';
+        console.error(err);
+      }
     };
 
     stopBtn.onclick = () => {
