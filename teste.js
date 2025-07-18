@@ -1,133 +1,125 @@
 const express = require('express');
-const multer = require('multer');
 const cors = require('cors');
-const fs = require('fs');
+const multer = require('multer');
 const path = require('path');
-const { execFile } = require('child_process');
+const fs = require('fs');
+const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
 const wav = require('wav');
 const { fft, util } = require('fft-js');
-const { Parser } = require('json2csv');
+
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 const app = express();
+app.use(cors());
+app.use(express.static('uploads')); // Para servir os arquivos gerados
+
 const upload = multer({ dest: 'uploads/' });
 
-app.use(cors());
+/**
+ * Função para calcular FFT e retornar array de {frequency, magnitude}
+ * @param {Array} signal - vetor de amostras mono (Float32)
+ * @param {Number} sampleRate - taxa de amostragem em Hz
+ * @returns {Array} fftData - array {frequency, magnitude}
+ */
+function calculateFFT(signal, sampleRate) {
+  const phasors = fft(signal);
+  const magnitudes = phasors.map(c => util.fftMag(c));
+  const n = magnitudes.length;
+  const freqs = [];
 
-// Função para garantir potência de 2 para FFT
-function nextPowerOfTwo(n) {
-  return 1 << (32 - Math.clz32(n - 1));
+  for (let i = 0; i < n / 2; i++) { // só metade do espectro (frequências positivas)
+    freqs.push({
+      frequency: (i * sampleRate) / n,
+      magnitude: magnitudes[i]
+    });
+  }
+  return freqs;
 }
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Arquivo não enviado' });
 
+  const inputPath = req.file.path;
+  const wavPath = inputPath + '.converted.wav';
+
   try {
-    const inputPath = req.file.path;
-    const wavPath = inputPath + '.wav';
-
-    // Converter webm para wav mono 44.1kHz usando ffmpeg
+    // Converte webm para wav mono 44100Hz pcm_s16le usando ffmpeg
     await new Promise((resolve, reject) => {
-      execFile(ffmpegPath, [
-        '-i', inputPath,
-        '-ac', '1',            // mono
-        '-ar', '44100',        // 44.1kHz
-        '-f', 'wav',
-        wavPath
-      ], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+      ffmpeg(inputPath)
+        .outputOptions([
+          '-ac 1', // mono
+          '-ar 44100', // 44.1 kHz
+          '-f wav'
+        ])
+        .on('end', resolve)
+        .on('error', reject)
+        .save(wavPath);
     });
 
-    // Ler WAV e extrair amostras PCM
-    const samples = await new Promise((resolve, reject) => {
-      let reader = new wav.Reader();
-      let bufferData = [];
+    // Leitura do wav
+    const fileStream = fs.createReadStream(wavPath);
+    const reader = new wav.Reader();
 
-      reader.on('format', (format) => {
-        if (format.audioFormat !== 1) return reject('Formato WAV inválido (não PCM)');
-        if (format.channels !== 1) return reject('WAV deve ser mono');
-        if (format.sampleRate !== 44100) return reject('Taxa de amostragem deve ser 44100 Hz');
-      });
+    let samples = [];
+    let sampleRate = 44100;
 
-      reader.on('data', chunk => bufferData.push(chunk));
-
-      reader.on('end', () => {
-        const buffer = Buffer.concat(bufferData);
-        let samplesArray = [];
-        for (let i = 0; i < buffer.length; i += 2) {
-          // pcm_s16le: 16-bit signed int little endian
-          const val = buffer.readInt16LE(i);
-          samplesArray.push(val / 32768); // normaliza entre -1 e 1
-        }
-        resolve(samplesArray);
-      });
-
-      fs.createReadStream(wavPath).pipe(reader);
+    reader.on('format', function (format) {
+      sampleRate = format.sampleRate;
     });
 
-    // Calcular amplitude média por chunk de 0.1s
-    const sampleRate = 44100;
-    const chunkSize = sampleRate * 0.1;
-    let amplitudeData = [];
+    reader.on('data', function (data) {
+      // Converte buffer para array de amostras PCM 16 bits (signed)
+      for (let i = 0; i < data.length; i += 2) {
+        // PCM 16 bits little endian
+        const sample = data.readInt16LE(i) / 32768; // normaliza para -1 a 1
+        samples.push(sample);
+      }
+    });
 
+    await new Promise((resolve) => reader.on('end', resolve));
+    fileStream.pipe(reader);
+
+    // Dividir samples em chunks de 0.1s para amplitude média
+    const chunkSize = Math.floor(sampleRate * 0.1);
+    const amplitudeSamples = [];
     for (let i = 0; i < samples.length; i += chunkSize) {
       const chunk = samples.slice(i, i + chunkSize);
-      // valor absoluto médio normalizado
-      const meanAmp = chunk.reduce((acc, val) => acc + Math.abs(val), 0) / chunk.length;
-      amplitudeData.push({ time: (i / sampleRate), amplitude: meanAmp });
+      const avgAmplitude = chunk.reduce((sum, v) => sum + Math.abs(v), 0) / chunk.length;
+      amplitudeSamples.push({
+        time: (i / sampleRate).toFixed(2),
+        amplitude: avgAmplitude.toFixed(4)
+      });
     }
 
-    // Preparar entrada para FFT (potência de 2)
-    const fftSize = nextPowerOfTwo(samples.length);
-    const fftInput = samples.slice(0, fftSize);
+    // Calcular FFT (usando primeiro 4096 samples para resolução decente)
+    const fftInput = samples.slice(0, 4096);
+    const fftData = calculateFFT(fftInput, sampleRate);
 
-    // FFT - gera array de complexos
-    const phasors = fft(fftInput);
+    // Gerar arquivo TXT com dados da FFT
+    const fftTxtPath = path.join('uploads', path.basename(inputPath) + '_fft.txt');
+    const fftTxtContent = fftData.map(d => `${d.frequency.toFixed(2)}\t${d.magnitude.toFixed(6)}`).join('\n');
+    fs.writeFileSync(fftTxtPath, fftTxtContent);
 
-    // Calcula magnitude do espectro
-    const fftData = [];
-    for (let i = 0; i < phasors.length / 2; i++) {
-      const freq = i * sampleRate / fftSize;
-      const re = phasors[i][0];
-      const im = phasors[i][1];
-      const amplitude = Math.sqrt(re * re + im * im) / fftSize;
-      fftData.push({ freq, amplitude });
-    }
-
-    // Gerar CSV amplitude média
-    const csv = new Parser({ fields: ['time', 'amplitude'] }).parse(amplitudeData);
-    const csvFilename = inputPath + '.amplitude.csv';
-    fs.writeFileSync(csvFilename, csv);
-
-    // Gerar TXT FFT
-    const txtFilename = inputPath + '.fft.txt';
-    const txtContent = fftData.map(f => `${f.freq.toFixed(2)}\t${f.amplitude.toFixed(6)}`).join('\n');
-    fs.writeFileSync(txtFilename, txtContent);
-
-    // Limpar arquivos temporários originais (webm e wav)
+    // Limpar arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(wavPath);
 
-    // Enviar resposta JSON com dados e URLs para download
+    // Responder JSON com URL para download e dados para gráficos
     res.json({
-      amplitudeData,
-      fftData,
-      csvUrl: `/download/${path.basename(csvFilename)}`,
-      txtUrl: `/download/${path.basename(txtFilename)}`
+      downloadUrl: '/' + path.basename(fftTxtPath),
+      samples: amplitudeSamples,
+      fft: fftData
     });
 
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erro no processamento do áudio' });
+  } catch (error) {
+    console.error('Erro no processamento:', error);
+    res.status(500).json({ error: 'Erro interno no servidor' });
   }
 });
 
-// Servir arquivos gerados para download
-app.use('/download', express.static(path.join(__dirname, 'uploads')));
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Servidor rodando na porta ${port}`);
+// Iniciar servidor
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
