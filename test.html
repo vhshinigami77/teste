@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Gravação e FFT</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -14,11 +14,11 @@
   <canvas id="amplitudeChart" width="600" height="200"></canvas>
   <canvas id="fftChart" width="600" height="200"></canvas>
 
-  <!-- Player de áudio -->
+  <div id="downloadLinks" style="margin-top: 20px;"></div>
+
   <audio id="player" controls style="display: none; margin-top: 20px;"></audio>
+
   <p id="status" style="font-weight: bold;"></p>
-  <p id="filename" style="font-style: italic; color: gray;"></p>
-  <a id="downloadLink" style="display: none; margin-top: 10px;" download="gravacao.webm">⬇️ Baixar áudio</a>
 
   <script>
     let mediaRecorder;
@@ -33,6 +33,7 @@
       audioChunks = [];
 
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         const formData = new FormData();
@@ -46,49 +47,29 @@
             body: formData
           });
 
+          if (!response.ok) throw new Error('Falha no upload');
+
           const result = await response.json();
           document.getElementById('sampleRate').textContent = '44100 Hz';
 
           drawAmplitudeChart(result.samples);
           drawFFTChart(result.fft);
 
-          // Mostrar o player de áudio
+          // Mostrar player de áudio
           const audioUrl = URL.createObjectURL(audioBlob);
           const player = document.getElementById('player');
           player.src = audioUrl;
           player.style.display = 'block';
 
-          // Mostrar o nome do arquivo
-          document.getElementById('filename').textContent = 'Arquivo: gravacao.webm';
+          // Links de download
+          const baseUrl = 'https://teste-fb8o.onrender.com';
+          const downloadDiv = document.getElementById('downloadLinks');
+          downloadDiv.innerHTML = `
+            <a href="${baseUrl}${result.downloads.amplitude}" download target="_blank">📥 Baixar Amplitude (.txt)</a><br>
+            <a href="${baseUrl}${result.downloads.fft}" download target="_blank">📥 Baixar FFT (.txt)</a>
+          `;
 
-          // Mostrar link de download
-          const downloadLink = document.getElementById('downloadLink');
-          downloadLink.href = audioUrl;
-          downloadLink.style.display = 'inline-block';
-
-          // Mensagem de status
           document.getElementById('status').textContent = '✅ Arquivo enviado com sucesso!';
-
-          // Mostrar links para os arquivos txt
-          const linksContainer = document.createElement('div');
-          linksContainer.style.marginTop = '15px';
-
-          const ampLink = document.createElement('a');
-          ampLink.href = result.downloads.amplitude;
-          ampLink.textContent = '⬇️ Baixar amplitude.txt';
-          ampLink.download = 'amplitude.txt';
-          ampLink.style.display = 'block';
-
-          const fftLink = document.createElement('a');
-          fftLink.href = result.downloads.fft;
-          fftLink.textContent = '⬇️ Baixar fft.txt';
-          fftLink.download = 'fft.txt';
-          fftLink.style.display = 'block';
-
-          linksContainer.appendChild(ampLink);
-          linksContainer.appendChild(fftLink);
-          document.body.appendChild(linksContainer);
-
         } catch (err) {
           document.getElementById('status').textContent = '❌ Erro ao enviar o arquivo.';
           console.error(err);
