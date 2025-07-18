@@ -74,7 +74,7 @@ function extractSamples(wavPath) {
   });
 }
 
-// Função para calcular FFT
+// Função para calcular FFT com redução de amostras
 function calculateFFT(wavPath, outputTxtPath) {
   return new Promise((resolve, reject) => {
     const reader = new wav.Reader();
@@ -90,29 +90,29 @@ function calculateFFT(wavPath, outputTxtPath) {
       });
 
       reader.on('end', () => {
-        // Verificação e padding
-        const N = Math.pow(2, Math.ceil(Math.log2(signal.length)));
-        while (signal.length < N) {
-          signal.push(0);
-        }
-
-        console.log('Primeiros samples:', signal.slice(0, 10));
-        console.log('Comprimento do sinal (com padding):', signal.length);
-
         const phasors = fft(signal);
         const frequencies = fftUtil.fftFreq(phasors, format.sampleRate);
         const magnitudes = fftUtil.fftMag(phasors);
 
-        console.log('Primeiras magnitudes:', magnitudes.slice(0, 10));
+        // 1. Limitar a 5000 Hz
+        const raw = frequencies.map((freq, i) => ({
+          frequency: freq,
+          amplitude: magnitudes[i]
+        })).filter(r => r.frequency >= 0 && r.frequency <= 5000);
 
-        const result = frequencies.map((freq, i) => ({
-          frequency: freq.toFixed(1),
-          amplitude: magnitudes[i].toFixed(4)
-        }));
+        // 2. Agrupar a cada 10 amostras
+        const step = 10;
+        const averaged = [];
+        for (let i = 0; i < raw.length; i += step) {
+          const block = raw.slice(i, i + step);
+          const avgFreq = block.reduce((s, v) => s + v.frequency, 0) / block.length;
+          const avgAmp = block.reduce((s, v) => s + v.amplitude, 0) / block.length;
+          averaged.push({ frequency: avgFreq.toFixed(1), amplitude: avgAmp.toFixed(4) });
+        }
 
-        const txt = result.map(r => `${r.frequency}\t${r.amplitude}`).join('\n');
+        const txt = averaged.map(r => `${r.frequency}\t${r.amplitude}`).join('\n');
         fs.writeFileSync(outputTxtPath, txt);
-        resolve(result);
+        resolve(averaged);
       });
     });
 
@@ -125,14 +125,14 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   try {
     const inputPath = req.file.path;
     const wavPath = inputPath + '.converted.wav';
-    const fftTxtPath = path.join('uploads', req.file.filename + '.fft.txt');
+    const fftTxtPath = inputPath + '.fft.txt';
 
     await convertToWav(inputPath, wavPath);
     const samples = await extractSamples(wavPath);
     const fftData = await calculateFFT(wavPath, fftTxtPath);
 
     res.json({
-      downloadUrl: `/uploads/${req.file.filename}.fft.txt`,
+      downloadUrl: `/uploads/${path.basename(fftTxtPath)}`,
       samples,
       fft: fftData
     });
