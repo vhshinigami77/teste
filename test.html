@@ -11,6 +11,9 @@
       max-width: 700px;
       margin-top: 20px;
     }
+    canvas {
+      margin-bottom: 40px;
+    }
   </style>
 </head>
 <body>
@@ -23,6 +26,7 @@
 
   <div id="chart-container" style="display:none;">
     <canvas id="amplitudeChart"></canvas>
+    <canvas id="fftChart"></canvas>
   </div>
 
   <script>
@@ -35,10 +39,11 @@
     const downloadDiv = document.getElementById('download');
     const audioElement = document.getElementById('audio');
     const chartContainer = document.getElementById('chart-container');
-    const ctx = document.getElementById('amplitudeChart').getContext('2d');
-    let amplitudeChart;
+    const amplitudeCtx = document.getElementById('amplitudeChart').getContext('2d');
+    const fftCtx = document.getElementById('fftChart').getContext('2d');
 
-    // Iniciar gravação
+    let amplitudeChart, fftChart;
+
     recordBtn.onclick = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -80,16 +85,26 @@
             const json = await response.json();
             status.textContent = "Processamento concluído!";
 
-            // Link de download do .txt
-            downloadDiv.innerHTML = `<a href="https://SEU_BACKEND/render.com${json.downloadUrl}" target="_blank">Baixar FFT TXT</a>`;
+            // Mostrar links para download dos arquivos CSV e TXT
+            downloadDiv.innerHTML = `
+              <a href="https://SEU_BACKEND/render.com${json.csvUrl}" target="_blank" download>Baixar CSV (Amplitude)</a><br>
+              <a href="https://SEU_BACKEND/render.com${json.txtUrl}" target="_blank" download>Baixar FFT TXT</a>
+            `;
 
-            if (json.samples && json.samples.length > 0) {
-              showChart(json.samples);
+            // Mostrar gráficos
+            if (json.amplitudeData && json.amplitudeData.length > 0) {
+              showAmplitudeChart(json.amplitudeData);
             } else {
-              chartContainer.style.display = 'none';
+              document.getElementById('chart-container').style.display = 'none';
+            }
+
+            if (json.fftData && json.fftData.length > 0) {
+              showFFTChart(json.fftData);
             }
           } catch (err) {
             status.textContent = "Erro ao enviar: " + err.message;
+            chartContainer.style.display = 'none';
+            downloadDiv.innerHTML = '';
           }
         };
 
@@ -101,25 +116,22 @@
       }
     };
 
-    // Parar gravação
     stopBtn.onclick = () => {
       mediaRecorder.stop();
       recordBtn.disabled = false;
       stopBtn.disabled = true;
     };
 
-    // Mostrar gráfico de amplitude média por chunk
-    function showChart(samples) {
+    // Função para mostrar gráfico de amplitude média
+    function showAmplitudeChart(samples) {
       chartContainer.style.display = 'block';
 
-      const labels = samples.map(s => s.time);
+      const labels = samples.map(s => s.time.toFixed(2));
       const data = samples.map(s => parseFloat(s.amplitude));
 
-      if (amplitudeChart) {
-        amplitudeChart.destroy();
-      }
+      if (amplitudeChart) amplitudeChart.destroy();
 
-      amplitudeChart = new Chart(ctx, {
+      amplitudeChart = new Chart(amplitudeCtx, {
         type: 'line',
         data: {
           labels,
@@ -135,20 +147,40 @@
         options: {
           responsive: true,
           scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'Tempo (s)'
-              }
-            },
-            y: {
-              title: {
-                display: true,
-                text: 'Amplitude'
-              },
-              min: 0,
-              max: 1
-            }
+            x: { title: { display: true, text: 'Tempo (s)' } },
+            y: { title: { display: true, text: 'Amplitude' }, min: 0, max: 1 }
+          }
+        }
+      });
+    }
+
+    // Função para mostrar gráfico FFT
+    function showFFTChart(fftData) {
+      chartContainer.style.display = 'block';
+
+      const labels = fftData.map(f => f.freq.toFixed(0));
+      const data = fftData.map(f => parseFloat(f.amplitude));
+
+      if (fftChart) fftChart.destroy();
+
+      fftChart = new Chart(fftCtx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'FFT - Amplitude por Frequência (Hz)',
+            data,
+            borderColor: 'rgb(192, 75, 192)',
+            fill: false,
+            tension: 0.2,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: { title: { display: true, text: 'Frequência (Hz)' } },
+            y: { title: { display: true, text: 'Amplitude' }, min: 0 }
           }
         }
       });
