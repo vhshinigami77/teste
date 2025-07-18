@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import cors from 'cors';
+import cors from 'cors'; // ✅ Adicionado para permitir CORS
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import fs from 'fs';
@@ -8,10 +8,11 @@ import path from 'path';
 import { fft } from 'fft-js';
 
 const app = express();
-app.use(cors());
+app.use(cors()); // ✅ Habilita CORS para aceitar requisições de outras origens
 const upload = multer({ dest: 'uploads/' });
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
+
 app.use(express.json());
 
 // ✅ Garante que a pasta 'public/' exista
@@ -31,9 +32,11 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     await convertToWav(inputPath, outputWavPath);
     console.log('✅ Conversão concluída.');
 
+    // Ler WAV e extrair dados PCM
     const wavBuffer = fs.readFileSync(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
 
+    // Calcular média de amplitude em blocos (0.1s)
     const sampleRate = 44100;
     const blockSize = Math.floor(sampleRate * 0.1);
     const amplitudeData = [];
@@ -43,12 +46,13 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    // ✅ Salvar arquivo de amplitude
-    const ampPath = `public/amplitude_${Date.now()}.txt`;
+    // Salvar arquivo de amplitude
+    const ampFilename = `amplitude_${Date.now()}.txt`;
+    const ampPath = path.join(publicDir, ampFilename);
     const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(ampPath, ampContent);
 
-    // ✅ Calcular e salvar FFT
+    // Calcular FFT (pode usar só uma janela)
     const fftInput = samples.slice(0, 1024);
     const phasors = fft(fftInput);
     const fftData = phasors.map((c, i) => {
@@ -56,12 +60,15 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       const im = c[1];
       const mag = Math.sqrt(re * re + im * im);
       return { frequency: (i * sampleRate) / fftInput.length, amplitude: mag };
-    }).slice(0, fftInput.length / 2);
+    }).slice(0, fftInput.length / 2); // só metade (Nyquist)
 
-    const fftPath = `public/fft_${Date.now()}.txt`;
+    // Salvar arquivo de FFT
+    const fftFilename = `fft_${Date.now()}.txt`;
+    const fftPath = path.join(publicDir, fftFilename);
     const fftContent = fftData.map(d => `${d.frequency}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(fftPath, fftContent);
 
+    // Limpar arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
@@ -69,8 +76,8 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       samples: amplitudeData,
       fft: fftData,
       downloads: {
-        amplitude: `/${path.basename(ampPath)}`,
-        fft: `/${path.basename(fftPath)}`
+        amplitude: `/${ampFilename}`,
+        fft: `/${fftFilename}`
       }
     });
   } catch (err) {
