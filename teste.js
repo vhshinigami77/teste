@@ -1,101 +1,126 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegStatic = require('ffmpeg-static');
 const fs = require('fs');
-const { execFile } = require('child_process');
-const ffmpegPath = require('ffmpeg-static');
+const path = require('path');
 const wav = require('wav');
-const fft = require('fft-js').fft;
-const fftUtil = require('fft-js').util;
+const { fft, util: fftUtil } = require('fft-js');
 
 const app = express();
+app.use(cors());
 const upload = multer({ dest: 'uploads/' });
 
-app.use(cors());
+ffmpeg.setFfmpegPath(ffmpegStatic);
 
+// Função para próxima potência de 2
+function nextPowerOfTwo(n) {
+  return 2 ** Math.ceil(Math.log2(n));
+}
+
+// Endpoint upload e processamento
 app.post('/upload', upload.single('audio'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Arquivo de áudio não enviado' });
-    }
-
     const inputPath = req.file.path;
-    const wavPath = inputPath + '.wav';
+    const outputWavPath = inputPath + '.wav';
 
-    // Converter para WAV mono 44100Hz
+    // Converter webm/ogg para wav mono 44100 Hz
     await new Promise((resolve, reject) => {
-      execFile(
-        ffmpegPath,
-        ['-i', inputPath, '-ac', '1', '-ar', '44100', '-f', 'wav', wavPath],
-        (error) => {
-          if (error) reject(error);
-          else resolve();
-        }
-      );
+      ffmpeg(inputPath)
+        .audioChannels(1)
+        .audioFrequency(44100)
+        .format('wav')
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputWavPath);
     });
 
-    // Ler WAV
-    const samples = await new Promise((resolve, reject) => {
-      const fileStream = fs.createReadStream(wavPath);
-      const reader = new wav.Reader();
+    // Ler dados wav
+    const fileReader = fs.createReadStream(outputWavPath);
+    const reader = new wav.Reader();
 
-      let audioData = [];
-
-      reader.on('format', (format) => {
-        // Formato lido, não usado direto aqui
-      });
-
-      reader.on('data', (chunk) => {
-        for (let i = 0; i < chunk.length; i += 2) {
-          const sample = chunk.readInt16LE(i);
-          audioData.push(sample / 32768);
-        }
-      });
-
-      reader.on('end', () => resolve(audioData));
-      reader.on('error', (err) => reject(err));
-
-      fileStream.pipe(reader);
+    let samples = [];
+    reader.on('format', function (format) {
+      if (format.sampleRate !== 44100) {
+        return res.status(400).json({ error: 'Taxa de amostragem inesperada' });
+      }
     });
 
-    // Calcular amplitude média por chunk de 0.1s (4410 amostras)
-    const chunkSize = 4410;
-    const amplitudeData = [];
-    for (let i = 0; i < samples.length; i += chunkSize) {
-      const chunk = samples.slice(i, i + chunkSize);
-      const meanAmp = chunk.reduce((acc, val) => acc + Math.abs(val), 0) / chunk.length;
-      amplitudeData.push({
-        time: (i / 44100).toFixed(2),
-        amplitude: meanAmp.toFixed(4),
+    reader.on('data', function (data) {
+      // dados PCM 16-bit signed little endian
+      for (let i = 0; i < data.length; i += 2) {
+        const val = data.readInt16LE(i);
+        samples.push(val / 32768); // normaliza entre -1 e 1
+      }
+    });
+
+    reader.on('end', () => {
+      // Processar em chunks de 0.1s (4410 amostras)
+      const chunkSize = 4410;
+
+      // Calcular médias de amplitude para gráfico tempo
+      let amplitudeSamples = [];
+      for (let i = 0; i < samples.length; i += chunkSize) {
+        const chunk = samples.slice(i, i + chunkSize);
+        const avgAmp = chunk.reduce((acc, val) => acc + Math.abs(val), 0) / chunk.length;
+        amplitudeSamples.push({
+          time: (i / 44100).toFixed(2),
+          amplitude: avgAmp.toFixed(3),
+        });
+      }
+
+      // Preparar dados para FFT: pegar primeiro chunk
+      let fftInput = samples.slice(0, chunkSize);
+      if (fftInput.length === 0) {
+        return res.status(400).json({ error: 'Áudio muito curto para FFT' });
+      }
+
+      // Ajustar tamanho para potência de 2
+      const targetLength = nextPowerOfTwo(fftInput.length);
+      while (fftInput.length < targetLength) {
+        fftInput.push(0);
+      }
+
+      // Calcular FFT
+      const phasors = fft(fftInput);
+      const magnitudes = fftUtil.fftMag(phasors);
+
+      // Preparar dados para gráfico FFT
+      const freqResolution = 44100 / magnitudes.length; // Hz por bin
+      let fftSamples = [];
+      for (let i = 0; i < magnitudes.length / 2; i++) {
+        fftSamples.push({
+          frequency: (i * freqResolution).toFixed(1),
+          magnitude: magnitudes[i].toFixed(5),
+        });
+      }
+
+      // Gerar arquivo txt com FFT (freq, magnitude)
+      const txtLines = fftSamples.map(s => `${s.frequency}\t${s.magnitude}`);
+      const txtPath = path.join('uploads', `${path.basename(inputPath)}_fft.txt`);
+      fs.writeFileSync(txtPath, 'Frequency(Hz)\tMagnitude\n' + txtLines.join('\n'));
+
+      // Limpar arquivos temporários
+      fs.unlinkSync(inputPath);
+      fs.unlinkSync(outputWavPath);
+
+      // Enviar resposta JSON com dados para frontend
+      res.json({
+        samples: amplitudeSamples,
+        fftSamples,
+        downloadUrl: '/' + txtPath.replace(/\\/g, '/'),
       });
-    }
+    });
 
-    // FFT do primeiro chunk
-    const firstChunk = samples.slice(0, chunkSize);
-    const phasors = fft(firstChunk);
-    const magnitudes = fftUtil.fftMag(phasors);
-
-    const half = Math.floor(magnitudes.length / 2);
-    const fftData = [];
-    for (let i = 0; i < half; i++) {
-      fftData.push({
-        frequency: (i * 44100 / chunkSize).toFixed(2),
-        magnitude: magnitudes[i].toFixed(4),
-      });
-    }
-
-    // Apagar arquivos temporários
-    fs.unlinkSync(inputPath);
-    fs.unlinkSync(wavPath);
-
-    return res.json({ amplitudeData, fftData });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Erro interno do servidor', details: err.message });
+    fileReader.pipe(reader);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Erro interno no servidor' });
   }
 });
 
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
