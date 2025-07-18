@@ -2,8 +2,8 @@ import express from 'express';
 import multer from 'multer';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
-import fs from 'fs';
-import path from 'path';
+import fs from 'fs/promises'; // usar versão promise do fs
+import cors from 'cors';
 import { fft } from 'fft-js';
 
 const app = express();
@@ -11,24 +11,42 @@ const upload = multer({ dest: 'uploads/' });
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
+app.use(cors()); // permite comunicação cross-origin
 app.use(express.json());
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
+  if (!req.file) {
+    console.error('❌ Nenhum arquivo recebido');
+    return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  }
+
   console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
 
   const inputPath = req.file.path;
-  const outputWavPath = inputPath + '.wav';
+  const outputWavPath = `${inputPath}.wav`;
 
   try {
     console.log('⚙️ Convertendo para WAV...');
-    await convertToWav(inputPath, outputWavPath);
-    console.log('✅ Conversão concluída.');
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .toFormat('wav')
+        .on('start', (cmd) => console.log('FFmpeg comando:', cmd))
+        .on('stderr', (line) => console.log('FFmpeg:', line))
+        .on('error', (err) => {
+          console.error('❌ Erro no FFmpeg:', err);
+          reject(err);
+        })
+        .on('end', () => {
+          console.log('✅ Conversão concluída.');
+          resolve();
+        })
+        .save(outputWavPath);
+    });
 
-    // Ler WAV e extrair dados PCM
-    const wavBuffer = fs.readFileSync(outputWavPath);
+    // Ler WAV convertido
+    const wavBuffer = await fs.readFile(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
 
-    // Calcular média de amplitude em blocos (0.1s)
     const sampleRate = 44100;
     const blockSize = Math.floor(sampleRate * 0.1);
     const amplitudeData = [];
@@ -38,47 +56,44 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    // Calcular FFT (pode usar só uma janela)
+    // FFT com janela 1024 samples
     const fftInput = samples.slice(0, 1024);
     const phasors = fft(fftInput);
-    const fftData = phasors.map((c, i) => {
-      const re = c[0];
-      const im = c[1];
-      const mag = Math.sqrt(re * re + im * im);
-      return { frequency: (i * sampleRate) / fftInput.length, amplitude: mag };
-    }).slice(0, fftInput.length / 2); // só metade (Nyquist)
+    const fftData = phasors
+      .map((c, i) => {
+        const re = c[0];
+        const im = c[1];
+        const mag = Math.sqrt(re * re + im * im);
+        return { frequency: (i * sampleRate) / fftInput.length, amplitude: mag };
+      })
+      .slice(0, fftInput.length / 2);
 
-    // Limpar arquivos
-    fs.unlinkSync(inputPath);
-    fs.unlinkSync(outputWavPath);
+    // Limpar arquivos assíncrono, evitar bloquear resposta
+    fs.unlink(inputPath).catch(console.warn);
+    fs.unlink(outputWavPath).catch(console.warn);
 
-    res.json({
+    // Responder dados
+    return res.json({
       samples: amplitudeData,
-      fft: fftData
+      fft: fftData,
     });
-  } catch (err) {
-    console.error('❌ Erro:', err);
-    res.status(500).json({ error: 'Erro no processamento do áudio' });
+  } catch (error) {
+    console.error('❌ Erro no processamento:', error);
+    try {
+      await fs.unlink(inputPath);
+      await fs.unlink(outputWavPath);
+    } catch (_) {}
+    return res.status(500).json({ error: 'Erro no processamento do áudio' });
   }
 });
 
-function convertToWav(input, output) {
-  return new Promise((resolve, reject) => {
-    ffmpeg(input)
-      .toFormat('wav')
-      .on('end', resolve)
-      .on('error', reject)
-      .save(output);
-  });
-}
-
 function extractSamplesFromWav(buffer) {
-  // WAV header padrão é 44 bytes
-  // Assumindo PCM 16 bits, mono
+  // Cabeçalho padrão WAV: 44 bytes
+  // PCM 16 bits mono assumido
   const samples = [];
   for (let i = 44; i < buffer.length; i += 2) {
     const sample = buffer.readInt16LE(i);
-    samples.push(sample / 32768); // normaliza para -1 a 1
+    samples.push(sample / 32768);
   }
   return samples;
 }
