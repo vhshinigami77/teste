@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Gravação e FFT</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -14,14 +14,10 @@
   <canvas id="amplitudeChart" width="600" height="200"></canvas>
   <canvas id="fftChart" width="600" height="200"></canvas>
 
-  <!-- Novo: player de áudio -->
+  <!-- Player de áudio -->
   <audio id="player" controls style="display: none; margin-top: 20px;"></audio>
-  <!-- Novo: status -->
+  <!-- Status -->
   <p id="status" style="font-weight: bold;"></p>
-  <!-- Novo: nome do arquivo -->
-  <p id="filename" style="font-style: italic; color: gray;"></p>
-  <!-- Novo: botão para download -->
-  <a id="downloadLink" style="display: none; margin-top: 10px;" download="gravacao.webm">⬇️ Baixar áudio</a>
 
   <script>
     let mediaRecorder;
@@ -32,10 +28,16 @@
 
     recordBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
+      
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm',
+        audioBitsPerSecond: 64000 // 64 kbps para arquivos menores
+      });
+
       audioChunks = [];
 
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         const formData = new FormData();
@@ -49,27 +51,20 @@
             body: formData
           });
 
+          if (!response.ok) throw new Error('Falha no upload');
+
           const result = await response.json();
           document.getElementById('sampleRate').textContent = '44100 Hz';
 
           drawAmplitudeChart(result.samples);
           drawFFTChart(result.fft);
 
-          // Mostrar o player de áudio
+          // Mostrar player com áudio gravado
           const audioUrl = URL.createObjectURL(audioBlob);
           const player = document.getElementById('player');
           player.src = audioUrl;
           player.style.display = 'block';
 
-          // Mostrar o nome do arquivo
-          document.getElementById('filename').textContent = 'Arquivo: gravacao.webm';
-
-          // Mostrar link de download
-          const downloadLink = document.getElementById('downloadLink');
-          downloadLink.href = audioUrl;
-          downloadLink.style.display = 'inline-block';
-
-          // Mensagem de status
           document.getElementById('status').textContent = '✅ Arquivo enviado com sucesso!';
 
         } catch (err) {
@@ -79,12 +74,22 @@
       };
 
       mediaRecorder.start();
+
+      // Parar gravação automaticamente após 5 segundos
+      setTimeout(() => {
+        if (mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+        }
+      }, 5000);
+
       recordBtn.disabled = true;
       stopBtn.disabled = false;
     };
 
     stopBtn.onclick = () => {
-      mediaRecorder.stop();
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
       recordBtn.disabled = false;
       stopBtn.disabled = true;
     };
