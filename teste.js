@@ -1,130 +1,147 @@
-import express from 'express';
-import cors from 'cors';
-import multer from 'multer';
-import ffmpegPath from 'ffmpeg-static';
-import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import wav from 'wav';
-import { fft, util as fftUtil } from 'fft-js';
+// Importação de pacotes
+const express = require('express');
+const multer = require('multer');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
+const ffmpegPath = require('ffmpeg-static');
+const { spawn } = require('child_process');
+const wav = require('wav');
+const { fft, util: fftUtil } = require('fft-js');
+const { Parser } = require('json2csv');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.static('uploads'));
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-const upload = multer({ dest: 'uploads/' });
+// Configuração do multer para upload de arquivos
+const storage = multer.diskStorage({
+  destination: 'uploads/',
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now();
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage });
 
-// Função util para potência de 2 >= n
-function nextPowerOfTwo(n) {
-  return 2 ** Math.ceil(Math.log2(n));
+// Função para converter para WAV mono 44100Hz
+function convertToWav(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn(ffmpegPath, [
+      '-i', inputPath,
+      '-ac', '1',
+      '-ar', '44100',
+      outputPath
+    ]);
+
+    ffmpeg.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exited with code ${code}`));
+    });
+  });
 }
 
-// POST /upload
-app.post('/upload', upload.single('audio'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Arquivo não enviado' });
-
-  try {
-    const inputPath = req.file.path;
-    const wavPath = inputPath + '.converted.wav';
-
-    // Converter para WAV mono 44100 Hz com ffmpeg (child_process)
-    await new Promise((resolve, reject) => {
-      const ffmpeg = spawn(ffmpegPath, [
-        '-i', inputPath,
-        '-ac', '1',          // mono
-        '-ar', '44100',      // sample rate 44.1kHz
-        '-f', 'wav',
-        wavPath,
-        '-y'
-      ]);
-
-      ffmpeg.on('error', reject);
-      ffmpeg.stderr.on('data', data => {
-        // descomente para debug: console.error('ffmpeg stderr:', data.toString());
-      });
-      ffmpeg.on('close', code => {
-        if (code === 0) resolve();
-        else reject(new Error(`ffmpeg saiu com código ${code}`));
-      });
-    });
-
-    // Ler WAV e extrair samples normalizados
+// Função para extrair amostras WAV
+function extractSamples(wavPath) {
+  return new Promise((resolve, reject) => {
     const samples = [];
+    const fileStream = fs.createReadStream(wavPath);
+    const reader = new wav.Reader();
 
-    await new Promise((resolve, reject) => {
-      const reader = new wav.Reader();
-
-      reader.on('format', fmt => {
-        if (fmt.audioFormat !== 1) reject(new Error('Formato WAV não suportado'));
-      });
-
-      reader.on('data', chunk => {
-        for (let i = 0; i < chunk.length; i += 2) {
-          const val = chunk.readInt16LE(i);
-          samples.push(val / 32768); // normaliza -1..1
+    reader.on('format', format => {
+      const chunkSize = Math.floor(format.sampleRate * 0.1);
+      let chunk = [];
+      reader.on('data', data => {
+        for (let i = 0; i < data.length; i += 2) {
+          const sample = data.readInt16LE(i) / 32768;
+          chunk.push(sample);
+          if (chunk.length === chunkSize) {
+            const avg = chunk.reduce((sum, s) => sum + Math.abs(s), 0) / chunk.length;
+            samples.push({ amplitude: avg.toFixed(4), time: (samples.length * 0.1).toFixed(2) });
+            chunk = [];
+          }
         }
       });
 
-      reader.on('end', resolve);
-      reader.on('error', reject);
-
-      fs.createReadStream(wavPath).pipe(reader);
+      reader.on('end', () => resolve(samples));
     });
 
-    if (samples.length === 0) return res.status(500).json({ error: 'Nenhum dado no WAV' });
+    reader.on('error', reject);
+    fileStream.pipe(reader);
+  });
+}
 
-    // Preparar dados para FFT (preencher zeros até potência de 2)
-    const fftLength = nextPowerOfTwo(samples.length);
-    while (samples.length < fftLength) samples.push(0);
+// Função para calcular FFT
+function calculateFFT(wavPath, outputTxtPath) {
+  return new Promise((resolve, reject) => {
+    const reader = new wav.Reader();
+    const fileStream = fs.createReadStream(wavPath);
+    const signal = [];
 
-    // Calcular FFT
-    const phasors = fft(samples);
-    const magnitudes = fftUtil.fftMag(phasors);
-
-    // Debug log (remova no prod)
-    console.log('FFT magnitudes (10 primeiros):', magnitudes.slice(0, 10));
-
-    // Frequência por bin
-    const sampleRate = 44100;
-    const freqStep = sampleRate / magnitudes.length;
-
-    // Preparar dados para TXT e JSON (só metade para evitar espelho)
-    const fftData = [];
-    for (let i = 0; i < magnitudes.length / 2; i++) {
-      fftData.push({
-        frequency: (i * freqStep).toFixed(1),
-        magnitude: magnitudes[i].toFixed(6),
+    reader.on('format', format => {
+      reader.on('data', data => {
+        for (let i = 0; i < data.length; i += 2) {
+          const sample = data.readInt16LE(i) / 32768;
+          signal.push(sample);
+        }
       });
-    }
 
-    // Salvar TXT
-    const baseName = path.basename(inputPath);
-    const txtFilename = baseName + '_fft.txt';
-    const txtPath = path.join('uploads', txtFilename);
+      reader.on('end', () => {
+        // Verificação e padding
+        const N = Math.pow(2, Math.ceil(Math.log2(signal.length)));
+        while (signal.length < N) {
+          signal.push(0);
+        }
 
-    const txtContent = 'Frequency(Hz)\tMagnitude\n' +
-      fftData.map(d => `${d.frequency}\t${d.magnitude}`).join('\n');
+        console.log('Primeiros samples:', signal.slice(0, 10));
+        console.log('Comprimento do sinal (com padding):', signal.length);
 
-    fs.writeFileSync(txtPath, txtContent);
+        const phasors = fft(signal);
+        const frequencies = fftUtil.fftFreq(phasors, format.sampleRate);
+        const magnitudes = fftUtil.fftMag(phasors);
 
-    // Responder JSON com URL e dados FFT para plotagem
-    res.json({
-      downloadUrl: '/' + txtFilename,
-      samples: fftData
+        console.log('Primeiras magnitudes:', magnitudes.slice(0, 10));
+
+        const result = frequencies.map((freq, i) => ({
+          frequency: freq.toFixed(1),
+          amplitude: magnitudes[i].toFixed(4)
+        }));
+
+        const txt = result.map(r => `${r.frequency}\t${r.amplitude}`).join('\n');
+        fs.writeFileSync(outputTxtPath, txt);
+        resolve(result);
+      });
     });
 
-    // Limpeza: opcional, pode apagar arquivos temporários
-    // fs.unlinkSync(inputPath);
-    // fs.unlinkSync(wavPath);
+    reader.on('error', reject);
+    fileStream.pipe(reader);
+  });
+}
 
+app.post('/upload', upload.single('audio'), async (req, res) => {
+  try {
+    const inputPath = req.file.path;
+    const wavPath = inputPath + '.converted.wav';
+    const fftTxtPath = path.join('uploads', req.file.filename + '.fft.txt');
+
+    await convertToWav(inputPath, wavPath);
+    const samples = await extractSamples(wavPath);
+    const fftData = await calculateFFT(wavPath, fftTxtPath);
+
+    res.json({
+      downloadUrl: `/uploads/${req.file.filename}.fft.txt`,
+      samples,
+      fft: fftData
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Erro no processamento do áudio' });
   }
 });
 
 app.listen(port, () => {
-  console.log(`Servidor rodando na porta ${port}`);
+  console.log(`Servidor rodando em http://localhost:${port}`);
 });
