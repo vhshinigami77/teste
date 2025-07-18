@@ -1,147 +1,118 @@
-// Importação de pacotes
-const express = require('express');
-const multer = require('multer');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
-const ffmpegPath = require('ffmpeg-static');
-const { spawn } = require('child_process');
-const wav = require('wav');
-const { fft, util: fftUtil } = require('fft-js');
-const { Parser } = require('json2csv');
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import ffmpegPath from 'ffmpeg-static';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
+import wav from 'wav';
+import pkg from 'fft-js';
+
+const { fft, util: fftUtil } = pkg;
 
 const app = express();
-const port = process.env.PORT || 3000;
-
+const upload = multer({ dest: tmpdir() });
 app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Configuração do multer para upload de arquivos
-const storage = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now();
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+function isPowerOfTwo(n) {
+  return n > 0 && (n & (n - 1)) === 0;
+}
+
+function nextPowerOfTwo(n) {
+  return 2 ** Math.ceil(Math.log2(n));
+}
+
+function calculateAmplitudeAverages(samples, sampleRate, chunkSize = 0.1) {
+  const samplesPerChunk = Math.floor(sampleRate * chunkSize);
+  const chunks = [];
+
+  for (let i = 0; i < samples.length; i += samplesPerChunk) {
+    const chunk = samples.slice(i, i + samplesPerChunk);
+    const avg = chunk.reduce((sum, val) => sum + Math.abs(val), 0) / chunk.length;
+    chunks.push({ time: (i / sampleRate).toFixed(2), amplitude: avg.toFixed(5) });
   }
-});
-const upload = multer({ storage });
 
-// Função para converter para WAV mono 44100Hz
-function convertToWav(inputPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    const ffmpeg = spawn(ffmpegPath, [
-      '-i', inputPath,
-      '-ac', '1',
-      '-ar', '44100',
-      outputPath
-    ]);
-
-    ffmpeg.on('close', code => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg exited with code ${code}`));
-    });
-  });
+  return chunks;
 }
 
-// Função para extrair amostras WAV
-function extractSamples(wavPath) {
-  return new Promise((resolve, reject) => {
-    const samples = [];
-    const fileStream = fs.createReadStream(wavPath);
-    const reader = new wav.Reader();
+function computeFFT(samples, sampleRate) {
+  // Preencher com zeros até a próxima potência de 2
+  const validLength = nextPowerOfTwo(samples.length);
+  const padded = samples.slice(0);
+  while (padded.length < validLength) padded.push(0);
 
-    reader.on('format', format => {
-      const chunkSize = Math.floor(format.sampleRate * 0.1);
-      let chunk = [];
-      reader.on('data', data => {
-        for (let i = 0; i < data.length; i += 2) {
-          const sample = data.readInt16LE(i) / 32768;
-          chunk.push(sample);
-          if (chunk.length === chunkSize) {
-            const avg = chunk.reduce((sum, s) => sum + Math.abs(s), 0) / chunk.length;
-            samples.push({ amplitude: avg.toFixed(4), time: (samples.length * 0.1).toFixed(2) });
-            chunk = [];
-          }
-        }
-      });
+  // Formatar para número complexo: [real, imag]
+  const phasors = padded.map(s => [s, 0]);
+  const fftResult = fft(phasors);
+  const frequencies = fftUtil.fftFreq(fftResult, sampleRate);
+  const magnitudes = fftUtil.fftMag(fftResult);
 
-      reader.on('end', () => resolve(samples));
-    });
+  // Limitar até 5000Hz e agrupar para visualização
+  const data = [];
+  for (let i = 0; i < frequencies.length; i++) {
+    if (frequencies[i] <= 5000) {
+      data.push({ frequency: frequencies[i].toFixed(1), amplitude: magnitudes[i].toFixed(5) });
+    }
+  }
 
-    reader.on('error', reject);
-    fileStream.pipe(reader);
-  });
-}
+  // Reduzir pontos agrupando a cada X amostras
+  const step = 10;
+  const reduced = [];
+  for (let i = 0; i < data.length; i += step) {
+    const group = data.slice(i, i + step);
+    const avgFreq = group.reduce((sum, d) => sum + parseFloat(d.frequency), 0) / group.length;
+    const avgAmp = group.reduce((sum, d) => sum + parseFloat(d.amplitude), 0) / group.length;
+    reduced.push({ frequency: avgFreq.toFixed(1), amplitude: avgAmp.toFixed(5) });
+  }
 
-// Função para calcular FFT com redução de amostras
-function calculateFFT(wavPath, outputTxtPath) {
-  return new Promise((resolve, reject) => {
-    const reader = new wav.Reader();
-    const fileStream = fs.createReadStream(wavPath);
-    const signal = [];
-
-    reader.on('format', format => {
-      reader.on('data', data => {
-        for (let i = 0; i < data.length; i += 2) {
-          const sample = data.readInt16LE(i) / 32768;
-          signal.push(sample);
-        }
-      });
-
-      reader.on('end', () => {
-        const phasors = fft(signal);
-        const frequencies = fftUtil.fftFreq(phasors, format.sampleRate);
-        const magnitudes = fftUtil.fftMag(phasors);
-
-        // 1. Limitar a 5000 Hz
-        const raw = frequencies.map((freq, i) => ({
-          frequency: freq,
-          amplitude: magnitudes[i]
-        })).filter(r => r.frequency >= 0 && r.frequency <= 5000);
-
-        // 2. Agrupar a cada 10 amostras
-        const step = 10;
-        const averaged = [];
-        for (let i = 0; i < raw.length; i += step) {
-          const block = raw.slice(i, i + step);
-          const avgFreq = block.reduce((s, v) => s + v.frequency, 0) / block.length;
-          const avgAmp = block.reduce((s, v) => s + v.amplitude, 0) / block.length;
-          averaged.push({ frequency: avgFreq.toFixed(1), amplitude: avgAmp.toFixed(4) });
-        }
-
-        const txt = averaged.map(r => `${r.frequency}\t${r.amplitude}`).join('\n');
-        fs.writeFileSync(outputTxtPath, txt);
-        resolve(averaged);
-      });
-    });
-
-    reader.on('error', reject);
-    fileStream.pipe(reader);
-  });
+  return reduced;
 }
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
   try {
-    const inputPath = req.file.path;
-    const wavPath = inputPath + '.converted.wav';
-    const fftTxtPath = inputPath + '.fft.txt';
+    const webmPath = req.file.path;
+    const wavPath = path.join(tmpdir(), `${Date.now()}.wav`);
 
-    await convertToWav(inputPath, wavPath);
-    const samples = await extractSamples(wavPath);
-    const fftData = await calculateFFT(wavPath, fftTxtPath);
-
-    res.json({
-      downloadUrl: `/uploads/${path.basename(fftTxtPath)}`,
-      samples,
-      fft: fftData
+    // Converter com ffmpeg
+    await new Promise((resolve, reject) => {
+      const ffmpeg = spawn(ffmpegPath, ['-i', webmPath, '-ar', '44100', '-ac', '1', wavPath]);
+      ffmpeg.on('close', code => (code === 0 ? resolve() : reject(new Error('FFmpeg falhou'))));
     });
+
+    // Ler samples do WAV
+    const reader = new wav.Reader();
+    const samples = [];
+
+    reader.on('format', () => {});
+    reader.on('data', chunk => {
+      for (let i = 0; i < chunk.length; i += 2) {
+        const int16 = chunk.readInt16LE(i);
+        samples.push(int16 / 32768);
+      }
+    });
+
+    reader.on('end', () => {
+      fs.unlinkSync(webmPath);
+      fs.unlinkSync(wavPath);
+
+      const sampleRate = 44100;
+      const amplitudeData = calculateAmplitudeAverages(samples, sampleRate);
+      const fftData = computeFFT(samples, sampleRate);
+
+      res.json({
+        sampleRate,
+        samples: amplitudeData,
+        fft: fftData
+      });
+    });
+
+    fs.createReadStream(wavPath).pipe(reader);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Erro no processamento do áudio' });
+    res.status(500).json({ error: 'Erro ao processar áudio' });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Servidor rodando em http://localhost:${port}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
