@@ -2,53 +2,38 @@ import express from 'express';
 import multer from 'multer';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
-import fs from 'fs/promises'; // usar versão promise do fs
-import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
 import { fft } from 'fft-js';
+import { Parser } from 'json2csv';
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
-app.use(cors()); // permite comunicação cross-origin
 app.use(express.json());
 
-app.post('/upload', upload.single('audio'), async (req, res) => {
-  if (!req.file) {
-    console.error('❌ Nenhum arquivo recebido');
-    return res.status(400).json({ error: 'Nenhum arquivo enviado' });
-  }
+// Servir arquivos gerados para download
+app.use('/outputs', express.static(path.join(process.cwd(), 'outputs')));
 
+app.post('/upload', upload.single('audio'), async (req, res) => {
   console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
 
   const inputPath = req.file.path;
-  const outputWavPath = `${inputPath}.wav`;
+  const outputWavPath = inputPath + '.wav';
 
   try {
     console.log('⚙️ Convertendo para WAV...');
-    await new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
-        .toFormat('wav')
-        .on('start', (cmd) => console.log('FFmpeg comando:', cmd))
-        .on('stderr', (line) => console.log('FFmpeg:', line))
-        .on('error', (err) => {
-          console.error('❌ Erro no FFmpeg:', err);
-          reject(err);
-        })
-        .on('end', () => {
-          console.log('✅ Conversão concluída.');
-          resolve();
-        })
-        .save(outputWavPath);
-    });
+    await convertToWav(inputPath, outputWavPath);
+    console.log('✅ Conversão concluída.');
 
-    // Ler WAV convertido
-    const wavBuffer = await fs.readFile(outputWavPath);
+    const wavBuffer = fs.readFileSync(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
 
     const sampleRate = 44100;
     const blockSize = Math.floor(sampleRate * 0.1);
+
     const amplitudeData = [];
     for (let i = 0; i < samples.length; i += blockSize) {
       const block = samples.slice(i, i + blockSize);
@@ -56,40 +41,62 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    // FFT com janela 1024 samples
+    // FFT
     const fftInput = samples.slice(0, 1024);
     const phasors = fft(fftInput);
-    const fftData = phasors
-      .map((c, i) => {
-        const re = c[0];
-        const im = c[1];
-        const mag = Math.sqrt(re * re + im * im);
-        return { frequency: (i * sampleRate) / fftInput.length, amplitude: mag };
-      })
-      .slice(0, fftInput.length / 2);
+    const fftData = phasors.map((c, i) => {
+      const re = c[0];
+      const im = c[1];
+      const mag = Math.sqrt(re * re + im * im);
+      return { frequency: (i * sampleRate) / fftInput.length, amplitude: mag };
+    }).slice(0, fftInput.length / 2);
 
-    // Limpar arquivos assíncrono, evitar bloquear resposta
-    fs.unlink(inputPath).catch(console.warn);
-    fs.unlink(outputWavPath).catch(console.warn);
+    // Garante que a pasta outputs existe
+    if (!fs.existsSync('outputs')) {
+      fs.mkdirSync('outputs');
+    }
 
-    // Responder dados
-    return res.json({
+    // Criar arquivos para download
+    const timestamp = Date.now();
+    const fftFileName = `fft_${timestamp}.txt`;
+    const ampFileName = `amplitude_${timestamp}.csv`;
+
+    // Arquivo txt FFT: frequencia \t amplitude
+    const fftLines = fftData.map(d => `${d.frequency.toFixed(1)}\t${d.amplitude.toFixed(6)}`).join('\n');
+    fs.writeFileSync(path.join('outputs', fftFileName), "frequency(Hz)\tamplitude\n" + fftLines);
+
+    // CSV amplitude média
+    const parser = new Parser({ fields: ['time', 'amplitude'] });
+    const ampCsv = parser.parse(amplitudeData);
+    fs.writeFileSync(path.join('outputs', ampFileName), ampCsv);
+
+    // Limpar arquivos temporários
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputWavPath);
+
+    res.json({
       samples: amplitudeData,
       fft: fftData,
+      fftDownloadUrl: `/outputs/${fftFileName}`,
+      amplitudeDownloadUrl: `/outputs/${ampFileName}`
     });
-  } catch (error) {
-    console.error('❌ Erro no processamento:', error);
-    try {
-      await fs.unlink(inputPath);
-      await fs.unlink(outputWavPath);
-    } catch (_) {}
-    return res.status(500).json({ error: 'Erro no processamento do áudio' });
+  } catch (err) {
+    console.error('❌ Erro:', err);
+    res.status(500).json({ error: 'Erro no processamento do áudio' });
   }
 });
 
+function convertToWav(input, output) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(input)
+      .toFormat('wav')
+      .on('end', resolve)
+      .on('error', reject)
+      .save(output);
+  });
+}
+
 function extractSamplesFromWav(buffer) {
-  // Cabeçalho padrão WAV: 44 bytes
-  // PCM 16 bits mono assumido
   const samples = [];
   for (let i = 44; i < buffer.length; i += 2) {
     const sample = buffer.readInt16LE(i);
