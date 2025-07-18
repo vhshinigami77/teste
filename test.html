@@ -1,149 +1,103 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gravador de Áudio com FFT</title>
+  <meta charset="UTF-8">
+  <title>Gravação e FFT</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    #chart-container {
-      width: 90%;
-      max-width: 700px;
-      margin-top: 20px;
-    }
-  </style>
 </head>
 <body>
-  <h1>Gravar Áudio e Enviar</h1>
+  <h1>Gravador de Áudio com FFT</h1>
   <button id="record">Gravar</button>
   <button id="stop" disabled>Parar</button>
-  <p id="status"></p>
-  <div id="download"></div>
-  <audio id="audio" controls style="display:none;"></audio>
+  <p><strong>Taxa de Amostragem:</strong> <span id="sampleRate"></span></p>
 
-  <div id="chart-container" style="display:none;">
-    <canvas id="fftChart"></canvas>
-  </div>
+  <canvas id="amplitudeChart" width="600" height="200"></canvas>
+  <canvas id="fftChart" width="600" height="200"></canvas>
 
   <script>
-    const backendUrl = 'https://teste-fb8o.onrender.com';
-
     let mediaRecorder;
     let audioChunks = [];
 
     const recordBtn = document.getElementById('record');
     const stopBtn = document.getElementById('stop');
-    const status = document.getElementById('status');
-    const downloadDiv = document.getElementById('download');
-    const audioElement = document.getElementById('audio');
-    const chartContainer = document.getElementById('chart-container');
-    const ctx = document.getElementById('fftChart').getContext('2d');
-    let fftChart;
 
     recordBtn.onclick = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
-        const audioContext = new AudioContext();
-        const sampleRate = audioContext.sampleRate;
-        audioContext.close();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
 
-        status.textContent = `Gravando com taxa de amostragem: ${sampleRate} Hz`;
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob);
 
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        audioChunks = [];
+        const response = await fetch('https://teste-fb8o.onrender.com/upload', {
+          method: 'POST',
+          body: formData
+        });
 
-        mediaRecorder.ondataavailable = e => {
-          if (e.data.size > 0) audioChunks.push(e.data);
-        };
+        const result = await response.json();
+        document.getElementById('sampleRate').textContent = '44100 Hz';
 
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-          const audioUrl = URL.createObjectURL(audioBlob);
-          audioElement.src = audioUrl;
-          audioElement.style.display = 'block';
+        drawAmplitudeChart(result.samples);
+        drawFFTChart(result.fft);
+      };
 
-          status.textContent = "Áudio gravado. Enviando...";
-
-          const formData = new FormData();
-          formData.append('audio', audioBlob, 'gravacao.webm');
-
-          try {
-            const response = await fetch(`${backendUrl}/upload`, {
-              method: 'POST',
-              body: formData
-            });
-            if (!response.ok) throw new Error('Falha ao enviar');
-
-            const json = await response.json();
-            status.textContent = 'Processamento concluído!';
-
-            downloadDiv.innerHTML = `<a href="${backendUrl}${json.downloadUrl}" target="_blank">Baixar FFT TXT</a>`;
-
-            if (json.samples && json.samples.length > 0) {
-              showFFTChart(json.samples);
-            } else {
-              chartContainer.style.display = 'none';
-            }
-          } catch (err) {
-            status.textContent = 'Erro ao enviar: ' + err.message;
-          }
-        };
-
-        mediaRecorder.start();
-        recordBtn.disabled = true;
-        stopBtn.disabled = false;
-      } catch (err) {
-        status.textContent = 'Erro ao acessar microfone: ' + err.message;
-      }
+      mediaRecorder.start();
+      recordBtn.disabled = true;
+      stopBtn.disabled = false;
     };
 
     stopBtn.onclick = () => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-      }
+      mediaRecorder.stop();
       recordBtn.disabled = false;
       stopBtn.disabled = true;
     };
 
-    function showFFTChart(samples) {
-      chartContainer.style.display = 'block';
-
-      const labels = samples.map(s => s.frequency);
-      const data = samples.map(s => parseFloat(s.magnitude));
-
-      if (fftChart) fftChart.destroy();
-
-      fftChart = new Chart(ctx, {
+    function drawAmplitudeChart(data) {
+      const ctx = document.getElementById('amplitudeChart').getContext('2d');
+      new Chart(ctx, {
         type: 'line',
         data: {
-          labels,
+          labels: data.map(d => d.time),
           datasets: [{
-            label: 'Magnitude FFT',
-            data,
-            borderColor: 'rgb(255, 99, 132)',
-            fill: false,
-            pointRadius: 0,
-            tension: 0.2
+            label: 'Amplitude Média (0.1s)',
+            data: data.map(d => d.amplitude),
+            borderColor: 'blue',
+            borderWidth: 1,
+            fill: false
           }]
         },
         options: {
+          responsive: true,
           scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'Frequência (Hz)'
-              },
-              ticks: {
-                maxTicksLimit: 20
-              }
-            },
-            y: {
-              title: {
-                display: true,
-                text: 'Magnitude'
-              },
-              min: 0
-            }
+            x: { title: { display: true, text: 'Tempo (s)' } },
+            y: { title: { display: true, text: 'Amplitude' } }
+          }
+        }
+      });
+    }
+
+    function drawFFTChart(data) {
+      const ctx = document.getElementById('fftChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => d.frequency),
+          datasets: [{
+            label: 'Espectro (FFT)',
+            data: data.map(d => d.amplitude),
+            borderColor: 'red',
+            borderWidth: 1,
+            fill: false
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: { title: { display: true, text: 'Frequência (Hz)' } },
+            y: { title: { display: true, text: 'Amplitude' } }
           }
         }
       });
