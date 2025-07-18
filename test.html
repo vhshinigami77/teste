@@ -3,26 +3,79 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gravador de Áudio com Gráfico</title>
+  <title>Gravador de Áudio com FFT</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    #chart-container {
-      width: 90%;
-      max-width: 700px;
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f0f2f5;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+      cursor: pointer;
+      border-radius: 5px;
+      border: none;
+      background-color: #007bff;
+      color: white;
+    }
+
+    button:disabled {
+      background-color: #cccccc;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    #audio {
       margin-top: 20px;
+    }
+
+    .chart-container {
+      width: 95%;
+      max-width: 800px;
+      margin: 30px auto;
+      display: none;
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    #dominant {
+      font-weight: bold;
+      margin-top: 10px;
     }
   </style>
 </head>
 <body>
-  <h1>Gravar Áudio e Enviar</h1>
+  <h1>Gravador de Áudio com FFT</h1>
   <button id="record">Gravar</button>
   <button id="stop" disabled>Parar</button>
   <p id="status"></p>
   <div id="download"></div>
   <audio id="audio" controls style="display:none;"></audio>
 
-  <div id="chart-container" style="display:none;">
+  <div id="chart-container" class="chart-container">
+    <h2>Amplitude Média (tempo)</h2>
     <canvas id="amplitudeChart"></canvas>
+  </div>
+
+  <div id="fft-chart-container" class="chart-container">
+    <h2>Espectro de Frequência (FFT)</h2>
+    <canvas id="fftChart"></canvas>
+    <p id="dominant"></p>
   </div>
 
   <script>
@@ -35,23 +88,23 @@
     const downloadDiv = document.getElementById('download');
     const audioElement = document.getElementById('audio');
     const chartContainer = document.getElementById('chart-container');
+    const fftChartContainer = document.getElementById('fft-chart-container');
+    const dominantText = document.getElementById('dominant');
     const ctx = document.getElementById('amplitudeChart').getContext('2d');
-    let amplitudeChart;
+    const fftCtx = document.getElementById('fftChart').getContext('2d');
+
+    let amplitudeChart, fftChart;
 
     recordBtn.onclick = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true }
-        });
-
-        // Obter taxa de amostragem do AudioContext
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const audioContext = new AudioContext();
         const sampleRate = audioContext.sampleRate;
         audioContext.close();
 
         status.textContent = `Gravando com taxa de amostragem: ${sampleRate} Hz`;
 
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
 
         mediaRecorder.ondataavailable = e => {
@@ -64,7 +117,7 @@
           audioElement.src = audioUrl;
           audioElement.style.display = 'block';
 
-          status.textContent = "Áudio gravado. Enviando automaticamente...";
+          status.textContent = "Enviando áudio...";
 
           const formData = new FormData();
           formData.append('audio', audioBlob, 'gravacao.webm');
@@ -80,13 +133,27 @@
             const json = await response.json();
             status.textContent = "Processamento concluído!";
 
-            downloadDiv.innerHTML = `<a href="https://teste-fb8o.onrender.com${json.downloadUrl}" target="_blank">Baixar TXT</a>`;
+            // Baixar automaticamente os arquivos txt
+            const downloadAuto = (url) => {
+              const a = document.createElement('a');
+              a.href = `https://teste-fb8o.onrender.com${url}`;
+              a.download = '';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            };
 
-            if (json.samples && json.samples.length > 0) {
-              showChart(json.samples);
-            } else {
-              chartContainer.style.display = 'none';
-            }
+            downloadAuto(json.downloadUrl);
+            downloadAuto(json.fftDownloadUrl);
+
+            downloadDiv.innerHTML = `
+              <a href="https://teste-fb8o.onrender.com${json.downloadUrl}" target="_blank">🔗 Ver TXT (tempo)</a><br>
+              <a href="https://teste-fb8o.onrender.com${json.fftDownloadUrl}" target="_blank">🔗 Ver TXT (FFT)</a>
+            `;
+
+            if (json.samples && json.samples.length > 0) showChart(json.samples);
+            if (json.spectrum && json.spectrum.length > 0) showFFT(json.spectrum);
+
           } catch (err) {
             status.textContent = "Erro ao enviar: " + err.message;
           }
@@ -108,13 +175,10 @@
 
     function showChart(samples) {
       chartContainer.style.display = 'block';
-
       const labels = samples.map(s => s.time);
       const data = samples.map(s => parseFloat(s.amplitude));
 
-      if (amplitudeChart) {
-        amplitudeChart.destroy();
-      }
+      if (amplitudeChart) amplitudeChart.destroy();
 
       amplitudeChart = new Chart(ctx, {
         type: 'line',
@@ -123,32 +187,67 @@
           datasets: [{
             label: 'Amplitude Média (0.1s)',
             data,
-            borderColor: 'rgb(75, 192, 192)',
+            borderColor: '#007bff',
             fill: false,
-            tension: 0.2,
             pointRadius: 0
           }]
         },
         options: {
-          responsive: true,
           scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'Tempo (s)'
-              }
-            },
-            y: {
-              title: {
-                display: true,
-                text: 'Amplitude'
-              },
-              min: 0,
-              max: 1
-            }
+            x: { title: { display: true, text: 'Tempo (s)' } },
+            y: { title: { display: true, text: 'Amplitude' }, min: 0, max: 1 }
           }
         }
       });
+    }
+
+    function showFFT(spectrum) {
+      fftChartContainer.style.display = 'block';
+      const labels = spectrum.map(p => p.freq.toFixed(1));
+      const data = spectrum.map(p => p.magnitude);
+
+      // Encontrar pico
+      let maxIndex = 0;
+      for (let i = 1; i < data.length; i++) {
+        if (data[i] > data[maxIndex]) maxIndex = i;
+      }
+
+      const freqPeak = labels[maxIndex];
+
+      if (fftChart) fftChart.destroy();
+
+      fftChart = new Chart(fftCtx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'FFT - Magnitude',
+              data,
+              borderColor: 'orange',
+              fill: false,
+              pointRadius: 0
+            },
+            {
+              label: `Pico: ${freqPeak} Hz`,
+              data: data.map((val, i) => (i === maxIndex ? val : null)),
+              borderColor: 'red',
+              backgroundColor: 'red',
+              pointRadius: 6,
+              pointStyle: 'circle',
+              type: 'scatter'
+            }
+          ]
+        },
+        options: {
+          scales: {
+            x: { title: { display: true, text: 'Frequência (Hz)' } },
+            y: { title: { display: true, text: 'Magnitude' } }
+          }
+        }
+      });
+
+      dominantText.textContent = `Frequência dominante: ${freqPeak} Hz`;
     }
   </script>
 </body>
