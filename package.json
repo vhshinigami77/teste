@@ -2,6 +2,7 @@
   "name": "teste_servidor_online",
   "version": "1.0.0",
   "main": "teste.js",
+  "type": "module",
   "scripts": {
     "start": "node teste.js"
   },
