@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import cors from 'cors'; // ✅ Adicionado para permitir CORS
+import cors from 'cors';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import fs from 'fs';
@@ -8,15 +8,15 @@ import path from 'path';
 import { fft } from 'fft-js';
 
 const app = express();
-app.use(cors()); // ✅ Habilita CORS para aceitar requisições de outras origens
+app.use(cors());
 const upload = multer({ dest: 'uploads/' });
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
 app.use(express.json());
 
-// ✅ Garante que a pasta 'public/' exista
-const publicDir = path.join(process.cwd(), 'public');
+// Pasta para salvar os arquivos txt e servir como estático
+const publicDir = path.join(process.cwd(), 'teste');
 if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir);
 }
@@ -52,7 +52,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(ampPath, ampContent);
 
-    // Calcular FFT (pode usar só uma janela)
+    // Calcular FFT (usar só uma janela)
     const fftInput = samples.slice(0, 1024);
     const phasors = fft(fftInput);
     const fftData = phasors.map((c, i) => {
@@ -105,7 +105,8 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-app.use(express.static('public'));
+// Serve arquivos estáticos da pasta 'teste'
+app.use(express.static('teste'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
