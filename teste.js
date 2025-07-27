@@ -15,7 +15,6 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
 
 app.use(express.json());
 
-// Pasta para salvar os arquivos txt e servir como estático
 const publicDir = path.join(process.cwd(), 'teste');
 if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir);
@@ -32,11 +31,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     await convertToWav(inputPath, outputWavPath);
     console.log('✅ Conversão concluída.');
 
-    // Ler WAV e extrair dados PCM
     const wavBuffer = fs.readFileSync(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
 
-    // Calcular média de amplitude em blocos (0.1s)
     const sampleRate = 44100;
     const blockSize = Math.floor(sampleRate * 0.1);
     const amplitudeData = [];
@@ -46,13 +43,11 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    // Salvar arquivo de amplitude
     const ampFilename = `amplitude_${Date.now()}.txt`;
     const ampPath = path.join(publicDir, ampFilename);
     const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(ampPath, ampContent);
 
-    // Calcular FFT (usar só uma janela)
     const fftInput = samples.slice(0, 1024);
     const phasors = fft(fftInput);
     const fftData = phasors.map((c, i) => {
@@ -60,24 +55,37 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       const im = c[1];
       const mag = Math.sqrt(re * re + im * im);
       return { frequency: (i * sampleRate) / fftInput.length, amplitude: mag };
-    }).slice(0, fftInput.length / 2); // só metade (Nyquist)
+    }).slice(0, fftInput.length / 2);
 
-    // Salvar arquivo de FFT
     const fftFilename = `fft_${Date.now()}.txt`;
     const fftPath = path.join(publicDir, fftFilename);
     const fftContent = fftData.map(d => `${d.frequency}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(fftPath, fftContent);
 
-    // Limpar arquivos temporários
+    const max = fftData.reduce((acc, val) => val.amplitude > acc.amplitude ? val : acc, { amplitude: 0 });
+    const dominantFrequency = max.frequency;
+    const limiar = 2e-3;
+
+    const dominantNote = max.amplitude < limiar ? 'Pausa' : frequencyToNote(dominantFrequency);
+
+    // Salvar nota.txt
+    const notaFilename = `nota_${Date.now()}.txt`;
+    const notaPath = path.join(publicDir, notaFilename);
+    const notaConteudo = dominantNote === 'Pausa' ? 'PAUSA' : dominantNote;
+    fs.writeFileSync(notaPath, notaConteudo);
+
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
     res.json({
       samples: amplitudeData,
       fft: fftData,
+      dominantFrequency,
+      dominantNote,
       downloads: {
         amplitude: `/${ampFilename}`,
-        fft: `/${fftFilename}`
+        fft: `/${fftFilename}`,
+        nota: `/${notaFilename}`
       }
     });
   } catch (err) {
@@ -105,7 +113,15 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-// Serve arquivos estáticos da pasta 'teste'
+function frequencyToNote(freq) {
+  const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const n = 12 * Math.log2(freq / 440);
+  const notaIndex = Math.round(n + 9);
+  const r = ((notaIndex % 12) + 12) % 12;
+  const q = Math.floor((notaIndex + 9) / 12);
+  return notas[r] + (4 + q);
+}
+
 app.use(express.static('teste'));
 
 const PORT = process.env.PORT || 3000;
