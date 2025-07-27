@@ -10,8 +10,6 @@
   <button id="record">Gravar</button>
   <button id="stop" disabled>Parar</button>
   <p><strong>Taxa de Amostragem:</strong> <span id="sampleRate"></span></p>
-  <p><strong>Nota Detectada:</strong> <span id="notaDetectada"></span></p>
-  <p><strong>Frequência Dominante:</strong> <span id="frequenciaDominante"></span> Hz</p>
 
   <canvas id="amplitudeChart" width="600" height="200"></canvas>
   <canvas id="fftChart" width="600" height="200"></canvas>
@@ -52,28 +50,28 @@
           if (!response.ok) throw new Error('Falha no upload');
 
           const result = await response.json();
-
           document.getElementById('sampleRate').textContent = '44100 Hz';
-          document.getElementById('notaDetectada').textContent = result.dominantNote;
-          document.getElementById('frequenciaDominante').textContent = result.dominantFrequency.toFixed(2);
 
           drawAmplitudeChart(result.samples);
           drawFFTChart(result.fft);
 
+          // Mostrar player de áudio
           const audioUrl = URL.createObjectURL(audioBlob);
           const player = document.getElementById('player');
           player.src = audioUrl;
           player.style.display = 'block';
 
+          // Links de download
           const baseUrl = 'https://teste-fb8o.onrender.com';
           const downloadDiv = document.getElementById('downloadLinks');
           downloadDiv.innerHTML = `
             <a href="${baseUrl}${result.downloads.amplitude}" download target="_blank">📥 Baixar Amplitude (.txt)</a><br>
             <a href="${baseUrl}${result.downloads.fft}" download target="_blank">📥 Baixar FFT (.txt)</a><br>
-            <a href="${baseUrl}${result.downloads.nota}" download target="_blank">📥 Baixar Nota Detectada (.txt)</a>
+            <a href="${baseUrl}${result.downloads.nota}" download target="_blank">📥 Baixar Nota (.txt)</a>
           `;
 
-          document.getElementById('status').textContent = '✅ Arquivo enviado com sucesso!';
+          // Exibir nota detectada e frequência dominante
+          document.getElementById('status').textContent = `✅ Arquivo enviado com sucesso! Nota dominante: ${result.dominantNote} (${result.dominantFrequency.toFixed(2)} Hz)`;
         } catch (err) {
           document.getElementById('status').textContent = '❌ Erro ao enviar o arquivo.';
           console.error(err);
