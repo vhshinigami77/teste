@@ -8,7 +8,12 @@ import path from 'path';
 import { fft } from 'fft-js';
 
 const app = express();
-app.use(cors());
+
+// Configuração CORS para aceitar requests de qualquer origem
+app.use(cors({
+  origin: '*'  // Ou coloque o domínio do front-end para maior segurança
+}));
+
 const upload = multer({ dest: 'uploads/' });
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -66,13 +71,12 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const dominantFrequency = max.frequency;
     const limiar = 2e-3;
 
-    const dominantNote = max.amplitude < limiar ? 'Pausa' : frequencyToNote(dominantFrequency);
+    const dominantNote = max.amplitude < limiar ? 'PAUSA' : frequencyToNote(dominantFrequency);
 
     // Salvar nota.txt
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
-    const notaConteudo = dominantNote === 'Pausa' ? 'PAUSA' : dominantNote;
-    fs.writeFileSync(notaPath, notaConteudo);
+    fs.writeFileSync(notaPath, dominantNote);
 
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
