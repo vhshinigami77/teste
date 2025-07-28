@@ -32,7 +32,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const samples = extractSamplesFromWav(wavBuffer);
     const sampleRate = 44100;
 
-    // --- Amplitude média por bloco ---
+    // --- Amplitude média por bloco (0.1s) ---
     const blockSize = Math.floor(sampleRate * 0.1);
     const amplitudeData = [];
     for (let i = 0; i < samples.length; i += blockSize) {
@@ -41,6 +41,12 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
+    // Salva arquivo de amplitude
+    const ampFilename = `amplitude_${Date.now()}.txt`;
+    const ampPath = path.join(publicDir, ampFilename);
+    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
+    fs.writeFileSync(ampPath, ampContent);
+
     // --- Autocorrelação para detectar frequência fundamental ---
     const autocorrFreq = detectFundamentalAutocorrelation(samples, sampleRate);
     const limiar = 2e-3;
@@ -48,17 +54,12 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       ? 'PAUSA'
       : frequencyToNoteDetailed(autocorrFreq);
 
-    // Salvar arquivos txt
-    const ampFilename = `amplitude_${Date.now()}.txt`;
-    const ampPath = path.join(publicDir, ampFilename);
-    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
-    fs.writeFileSync(ampPath, ampContent);
-
+    // Salva arquivo de nota
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
     fs.writeFileSync(notaPath, dominantNote);
 
-    // Limpeza dos arquivos temporários
+    // Remove arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
@@ -78,7 +79,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   }
 });
 
-// --- Conversão para WAV ---
+// Conversão para WAV
 function convertToWav(input, output) {
   return new Promise((resolve, reject) => {
     ffmpeg(input)
@@ -89,7 +90,7 @@ function convertToWav(input, output) {
   });
 }
 
-// --- Extração de amostras PCM normalizadas ---
+// Extração de samples PCM 16-bit normalizados (-1 a 1)
 function extractSamplesFromWav(buffer) {
   const samples = [];
   for (let i = 44; i < buffer.length; i += 2) {
@@ -99,13 +100,13 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-// --- Autocorrelação para detectar a frequência fundamental com refinamento ---
+// Autocorrelação para frequência fundamental
 function detectFundamentalAutocorrelation(samples, sampleRate) {
   const minFreq = 130;  // limite inferior ~ dó2
   const maxFreq = 1000; // limite superior
 
-  const minLag = Math.floor(sampleRate / maxFreq);
-  const maxLag = Math.floor(sampleRate / minFreq);
+  const minLag = Math.floor(sampleRate / maxFreq); // menor lag
+  const maxLag = Math.floor(sampleRate / minFreq); // maior lag
 
   let bestLag = -1;
   let maxCorrelation = 0;
@@ -123,7 +124,8 @@ function detectFundamentalAutocorrelation(samples, sampleRate) {
 
   if (bestLag === -1) return null;
 
-  // Refinar para evitar sub-harmônicos
+  // Refinamento opcional para evitar sub-harmônicos
+  /*
   for (let divisor = 2; divisor <= 4; divisor++) {
     let candidateLag = Math.floor(bestLag / divisor);
     if (candidateLag < minLag) break;
@@ -133,16 +135,17 @@ function detectFundamentalAutocorrelation(samples, sampleRate) {
       candidateSum += samples[i] * samples[i + candidateLag];
     }
 
-    if (candidateSum > 0.8 * maxCorrelation) {
+    if (candidateSum > 0.8 * maxCorrelation) { 
       bestLag = candidateLag;
       maxCorrelation = candidateSum;
     }
   }
+  */
 
   return sampleRate / bestLag;
 }
 
-// --- Converter frequência para nota musical com cents ---
+// Conversão frequência -> nota musical com cents de desvio
 function frequencyToNoteDetailed(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
 
@@ -152,7 +155,10 @@ function frequencyToNoteDetailed(freq) {
   const semitonesFromA4 = 12 * Math.log2(freq / A4);
   const semitonesRounded = Math.round(semitonesFromA4);
   const cents = Math.round((semitonesFromA4 - semitonesRounded) * 100);
-  const noteIndex = (semitonesRounded + 9 + 1200) % 12;
+
+  let noteIndex = (semitonesRounded + 9) % 12;
+  if (noteIndex < 0) noteIndex += 12;
+
   const octave = 4 + Math.floor((semitonesRounded + 9) / 12);
 
   return `${notas[noteIndex]}${octave} (${cents >= 0 ? '+' : ''}${cents} cents)`;
