@@ -32,41 +32,31 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const samples = extractSamplesFromWav(wavBuffer);
     const sampleRate = 44100;
 
-    // --- Amplitude média por bloco de 0.1s ---
-    const blockSize = Math.floor(sampleRate * 0.1);
-    const amplitudeData = [];
-    for (let i = 0; i < samples.length; i += blockSize) {
-      const block = samples.slice(i, i + blockSize);
-      const avg = block.reduce((acc, v) => acc + Math.abs(v), 0) / block.length;
-      amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
+    // Aqui você pode usar uma função simples para achar a frequência dominante, exemplo: FFT
+    const dominantFreq = getDominantFrequency(samples, sampleRate);
+
+    // Agora converter a frequência para nota musical com base no algoritmo do C
+    const amplitude = averageAmplitude(samples); // para aplicar o limiar
+    const limiar = 2e-3;
+
+    let dominantNote = 'PAUSA';
+    if (amplitude >= limiar && dominantFreq > 0) {
+      dominantNote = frequencyToNote(dominantFreq);
     }
 
-    const ampFilename = `amplitude_${Date.now()}.txt`;
-    const ampPath = path.join(publicDir, ampFilename);
-    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
-    fs.writeFileSync(ampPath, ampContent);
-
-    // --- Autocorrelação normalizada para detectar frequência fundamental ---
-    const autocorrFreq = detectFundamentalAutocorrelation(samples, sampleRate);
-    const limiar = 2e-3;
-    const dominantNote = !autocorrFreq || amplitudeData[0].amplitude < limiar
-      ? 'PAUSA'
-      : frequencyToNote(autocorrFreq);
-
+    // Gerar arquivos txt com resultado
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
     fs.writeFileSync(notaPath, dominantNote);
 
-    // Limpeza dos arquivos temporários
+    // Limpar arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
     res.json({
-      samples: amplitudeData,
-      dominantFrequency: autocorrFreq,
+      dominantFrequency: dominantFreq,
       dominantNote,
       downloads: {
-        amplitude: `/${ampFilename}`,
         nota: `/${notaFilename}`
       }
     });
@@ -77,7 +67,6 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   }
 });
 
-// Conversão para WAV
 function convertToWav(input, output) {
   return new Promise((resolve, reject) => {
     ffmpeg(input)
@@ -88,10 +77,9 @@ function convertToWav(input, output) {
   });
 }
 
-// Extração de amostras PCM normalizadas do WAV
 function extractSamplesFromWav(buffer) {
   const samples = [];
-  // WAV header tem 44 bytes, cada amostra 2 bytes (16 bits)
+  // Pula cabeçalho WAV padrão de 44 bytes
   for (let i = 44; i < buffer.length; i += 2) {
     const sample = buffer.readInt16LE(i);
     samples.push(sample / 32768);
@@ -99,76 +87,85 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-// Autocorrelação normalizada com refinamento de harmônicos
-function detectFundamentalAutocorrelation(samples, sampleRate) {
-  const minFreq = 130;  // dó2
-  const maxFreq = 1000; // limite superior
-
-  const minLag = Math.floor(sampleRate / maxFreq);
-  const maxLag = Math.floor(sampleRate / minFreq);
-
-  let bestLag = -1;
-  let maxCorr = -Infinity;
-
-  // Autocorrelação normalizada para cada lag
-  function normalizedCorr(lag) {
-    let sum = 0, sum1 = 0, sum2 = 0;
-    for (let i = 0; i < samples.length - lag; i++) {
-      const x = samples[i];
-      const y = samples[i + lag];
-      sum += x * y;
-      sum1 += x * x;
-      sum2 += y * y;
-    }
-    return sum / Math.sqrt(sum1 * sum2 + 1e-10); // evita divisão por zero
+function averageAmplitude(samples) {
+  let sum = 0;
+  for (const s of samples) {
+    sum += Math.abs(s);
   }
-
-  for (let lag = minLag; lag <= maxLag; lag++) {
-    const corr = normalizedCorr(lag);
-    if (corr > maxCorr) {
-      maxCorr = corr;
-      bestLag = lag;
-    }
-  }
-
-  if (bestLag === -1) return null;
-
-  // Refinar para evitar sub-harmônicos (harmônicos múltiplos)
-  for (let divisor = 2; divisor <= 4; divisor++) {
-    const candidateLag = Math.floor(bestLag / divisor);
-    if (candidateLag < minLag) break;
-
-    const candidateCorr = normalizedCorr(candidateLag);
-    if (candidateCorr > 0.8 * maxCorr) {
-      bestLag = candidateLag;
-      maxCorr = candidateCorr;
-    }
-  }
-
-  return sampleRate / bestLag;
+  return sum / samples.length;
 }
 
-// Converter frequência para nota musical com cents
+// Para detectar frequência dominante, vamos usar uma FFT simples (sem pacotes externos)
+function getDominantFrequency(samples, sampleRate) {
+  const fft = fftReal(samples);
+  // achar índice do pico (ignorando DC)
+  let maxMag = 0;
+  let maxIndex = 0;
+  for (let i = 1; i < fft.length / 2; i++) {
+    const mag = Math.sqrt(fft[i].re * fft[i].re + fft[i].im * fft[i].im);
+    if (mag > maxMag) {
+      maxMag = mag;
+      maxIndex = i;
+    }
+  }
+  return (maxIndex * sampleRate) / samples.length;
+}
+
+// FFT simples (Cooley-Tukey), retorna array de {re, im}
+function fftReal(buffer) {
+  const N = buffer.length;
+  if (N <= 1) return [{ re: buffer[0], im: 0 }];
+
+  if ((N & (N - 1)) !== 0) {
+    // zero padding para próximo potência de 2
+    const size = 1 << Math.ceil(Math.log2(N));
+    const padded = new Array(size).fill(0);
+    for (let i = 0; i < N; i++) padded[i] = buffer[i];
+    return fftReal(padded);
+  }
+
+  const even = fftReal(buffer.filter((_, i) => i % 2 === 0));
+  const odd = fftReal(buffer.filter((_, i) => i % 2 === 1));
+
+  const combined = [];
+  for (let k = 0; k < N / 2; k++) {
+    const t = expComplex(-2 * Math.PI * k / N);
+    const oddPart = complexMul(t, odd[k]);
+    combined[k] = complexAdd(even[k], oddPart);
+    combined[k + N / 2] = complexSub(even[k], oddPart);
+  }
+  return combined;
+}
+
+function expComplex(theta) {
+  return { re: Math.cos(theta), im: Math.sin(theta) };
+}
+
+function complexAdd(a, b) {
+  return { re: a.re + b.re, im: a.im + b.im };
+}
+
+function complexSub(a, b) {
+  return { re: a.re - b.re, im: a.im - b.im };
+}
+
+function complexMul(a, b) {
+  return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re };
+}
+
+// Conversão frequência -> nota musical igual ao C que você mostrou
 function frequencyToNote(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
 
-  const A4 = 440;
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const A4 = 440;
 
-  // Cálculo do número de semitons da frequência em relação ao A4
-  const semitonesFromA4 = 12 * Math.log2(freq / A4);
-  const semitonesRounded = Math.round(semitonesFromA4);
+  const n = 12 * Math.log(freq / A4) / Math.log(2); // n pode ser negativo
+  const rounded = Math.round(n + 9);
+  const octave = 4 + Math.floor(rounded / 12);
+  const noteIndex = ((rounded % 12) + 12) % 12; // para evitar negativos
 
-  // Cents = 100 * diferença fracionária
-  const cents = Math.round(100 * (semitonesFromA4 - semitonesRounded));
-
-  const noteIndex = (semitonesRounded + 9 + 1200) % 12; // 9 = offset para C
-  const octave = 4 + Math.floor((semitonesRounded + 9) / 12);
-
-  const noteName = notas[noteIndex] + octave;
-  const centsStr = cents === 0 ? '' : (cents > 0 ? ` (+${cents} cents)` : ` (${cents} cents)`);
-
-  return `${noteName}${centsStr}`;
+  return notas[noteIndex] + octave;
 }
 
 app.use(express.static('teste'));
