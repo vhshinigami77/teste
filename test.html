@@ -29,6 +29,8 @@
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
+
+        chunks = [];
         mediaRecorder.start();
         statusP.textContent = 'Gravando...';
 
@@ -38,7 +40,7 @@
 
         mediaRecorder.onstop = async () => {
           const blob = new Blob(chunks, { type: 'audio/webm' });
-          chunks = [];
+
           statusP.textContent = 'Enviando áudio para análise...';
 
           const formData = new FormData();
@@ -51,17 +53,8 @@
             });
             const data = await response.json();
 
-            if (data.dominantNote) {
-              notaSpan.textContent = data.dominantNote;
-            } else {
-              notaSpan.textContent = 'Não detectada';
-            }
-
-            if (data.dominantFrequency) {
-              freqSpan.textContent = data.dominantFrequency.toFixed(2);
-            } else {
-              freqSpan.textContent = '-';
-            }
+            notaSpan.textContent = data.dominantNote || 'Não detectada';
+            freqSpan.textContent = data.dominantFrequency ? data.dominantFrequency.toFixed(2) : '-';
 
             statusP.textContent = 'Análise concluída!';
           } catch (err) {
