@@ -10,13 +10,10 @@ const app = express();
 app.use(cors());
 const upload = multer({ dest: 'uploads/' });
 ffmpeg.setFfmpegPath(ffmpegStatic);
-
 app.use(express.json());
 
 const publicDir = path.join(process.cwd(), 'teste');
-if (!fs.existsSync(publicDir)) {
-  fs.mkdirSync(publicDir);
-}
+if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir);
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
   console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
@@ -31,10 +28,11 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const wavBuffer = fs.readFileSync(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
     const sampleRate = 44100;
+    const dt = 1 / sampleRate;
 
-    const dominantFreq = getDominantFrequency(samples, sampleRate);
+    const dominantFreq = dftDominantFrequency(samples, dt);
 
-    const amplitude = averageAmplitude(samples); // para aplicar o limiar
+    const amplitude = averageAmplitude(samples);
     const limiar = 2e-3;
 
     let dominantNote = 'PAUSA';
@@ -50,11 +48,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     fs.unlinkSync(outputWavPath);
 
     res.json({
-      dominantFrequency: dominantFreq,
+      dominantFrequency: Number(dominantFreq.toFixed(2)),
       dominantNote,
-      downloads: {
-        nota: `/${notaFilename}`
-      }
+      downloads: { nota: `/${notaFilename}` }
     });
 
   } catch (err) {
@@ -83,109 +79,42 @@ function extractSamplesFromWav(buffer) {
 }
 
 function averageAmplitude(samples) {
-  let sum = 0;
-  for (const s of samples) {
-    sum += Math.abs(s);
-  }
-  return sum / samples.length;
+  return samples.reduce((acc, s) => acc + Math.abs(s), 0) / samples.length;
 }
 
-// Função getDominantFrequency ajustada para janela ativa + Hanning + interpolação
-function getDominantFrequency(samples, sampleRate) {
-  const windowSize = 4096;
-  const step = 512;
-  if (samples.length < windowSize) return 0;
+// DFT manual com frequência entre 16 e 1048 Hz e passo 2 Hz
+function dftDominantFrequency(samples, dt) {
+  const f1 = 16;
+  const f2 = 1048;
+  const df = 2;
+  const totalf = Math.round((f2 - f1) / df) + 1;
 
-  // Encontra janela com maior energia RMS
-  let maxEnergy = 0;
-  let maxStart = 0;
-  for (let start = 0; start <= samples.length - windowSize; start += step) {
-    let energy = 0;
-    for (let i = 0; i < windowSize; i++) {
-      energy += samples[start + i] * samples[start + i];
+  let maxMag = 0;
+  let fMax = 0;
+
+  for (let j = 0; j < totalf; j++) {
+    const f = f1 + j * df;
+    let real = 0;
+    let imag = 0;
+
+    for (let i = 0; i < samples.length; i++) {
+      const t = i * dt;
+      const angle = 2 * Math.PI * f * t;
+      real += samples[i] * Math.cos(angle);
+      imag += -samples[i] * Math.sin(angle);
     }
-    energy = energy / windowSize;
-    if (energy > maxEnergy) {
-      maxEnergy = energy;
-      maxStart = start;
+
+    real *= dt;
+    imag *= dt;
+    const mag = Math.sqrt(real * real + imag * imag);
+
+    if (mag > maxMag) {
+      maxMag = mag;
+      fMax = f;
     }
   }
 
-  // Extrai janela com maior energia
-  const segment = samples.slice(maxStart, maxStart + windowSize);
-
-  // Aplica janela de Hanning
-  const windowed = new Array(windowSize);
-  for (let i = 0; i < windowSize; i++) {
-    const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
-    windowed[i] = segment[i] * w;
-  }
-
-  const fft = fftReal(windowed);
-
-  const mags = [];
-  for (let i = 1; i < windowSize / 2 - 1; i++) {
-    mags[i] = Math.sqrt(fft[i].re ** 2 + fft[i].im ** 2);
-  }
-
-  const minBin = Math.ceil(100 * windowSize / sampleRate);
-
-  let maxIndex = minBin;
-  for (let i = minBin + 1; i < windowSize / 2 - 1; i++) {
-    if (mags[i] > mags[maxIndex]) maxIndex = i;
-  }
-
-  if (mags[maxIndex] < 0.01) return 0;
-
-  // Interpolação do pico (parabólica)
-  const alpha = mags[maxIndex - 1];
-  const beta = mags[maxIndex];
-  const gamma = mags[maxIndex + 1];
-  const p = 0.5 * (alpha - gamma) / (alpha - 2 * beta + gamma);
-
-  const binFreq = (maxIndex + p) * sampleRate / windowSize;
-  return binFreq;
-}
-
-// FFT Cooley-Tukey
-function fftReal(buffer) {
-  const N = buffer.length;
-  if (N <= 1) return [{ re: buffer[0], im: 0 }];
-
-  if ((N & (N - 1)) !== 0) {
-    const size = 1 << Math.ceil(Math.log2(N));
-    const padded = new Array(size).fill(0);
-    for (let i = 0; i < N; i++) padded[i] = buffer[i];
-    return fftReal(padded);
-  }
-
-  const even = fftReal(buffer.filter((_, i) => i % 2 === 0));
-  const odd = fftReal(buffer.filter((_, i) => i % 2 === 1));
-
-  const combined = [];
-  for (let k = 0; k < N / 2; k++) {
-    const t = expComplex(-2 * Math.PI * k / N);
-    const oddPart = complexMul(t, odd[k]);
-    combined[k] = complexAdd(even[k], oddPart);
-    combined[k + N / 2] = complexSub(even[k], oddPart);
-  }
-  return combined;
-}
-
-function expComplex(theta) {
-  return { re: Math.cos(theta), im: Math.sin(theta) };
-}
-
-function complexAdd(a, b) {
-  return { re: a.re + b.re, im: a.im + b.im };
-}
-
-function complexSub(a, b) {
-  return { re: a.re - b.re, im: a.im - b.im };
-}
-
-function complexMul(a, b) {
-  return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re };
+  return fMax;
 }
 
 function frequencyToNote(freq) {
@@ -193,12 +122,10 @@ function frequencyToNote(freq) {
 
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const A4 = 440;
-
   const n = 12 * Math.log2(freq / A4);
-  const rounded = Math.round(n) + 9;
+  const rounded = Math.round(n + 9);
   const octave = 4 + Math.floor(rounded / 12);
   const noteIndex = ((rounded % 12) + 12) % 12;
-
   return notas[noteIndex] + octave;
 }
 
