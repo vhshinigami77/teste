@@ -69,12 +69,10 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
           frequency: freq,
           amplitude: Math.sqrt(re * re + im * im)
         };
-      }).slice(0, fftBlockSize / 2); // Apenas parte positiva do espectro
+      }).slice(0, fftBlockSize / 2);
 
-      // 🎯 FILTRO: considerar apenas frequências de 60 Hz a 1000 Hz para evitar harmônicos falsos
       const filtered = fftData.filter(d => d.frequency >= 60 && d.frequency <= 1000);
 
-      // Encontrar pico dominante dentro da faixa filtrada
       const blockMax = filtered.reduce((acc, val) =>
         val.amplitude > acc.amplitude ? val : acc, { amplitude: 0 });
 
@@ -84,9 +82,41 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       }
     }
 
-    // Se a amplitude for muito baixa, considerar como "PAUSA"
+    // Refaz fftData do último bloco para a busca de fundamental
+    const lastBlockSamples = samples.slice((fftBlocks - 1) * fftBlockSize, fftBlocks * fftBlockSize);
+    const lastPhasors = fft(lastBlockSamples);
+    const fullFftData = lastPhasors.map((c, idx) => {
+      const re = c[0];
+      const im = c[1];
+      const freq = (idx * sampleRate) / fftBlockSize;
+      return {
+        frequency: freq,
+        amplitude: Math.sqrt(re * re + im * im)
+      };
+    }).slice(0, fftBlockSize / 2).filter(d => d.frequency >= 60 && d.frequency <= 1000);
+
+    // Função para tentar encontrar a frequência fundamental dividindo harmônicos
+    function findFundamental(freq, fftData) {
+      for (let div = 1; div <= 5; div++) {
+        const candidateFreq = freq / div;
+        if (candidateFreq < 60) break; // sair se ficar abaixo do limite
+
+        // procura um pico perto da frequência candidata com tolerância de ±5 Hz
+        const found = fftData.find(d =>
+          Math.abs(d.frequency - candidateFreq) < 5 &&
+          d.amplitude > maxDominantAmplitude * 0.3); // amplitude razoável
+
+        if (found) {
+          return candidateFreq;
+        }
+      }
+      return freq; // se não achou, retorna a original
+    }
+
+    const fundamentalFrequency = findFundamental(dominantFrequency, fullFftData);
+
     const limiar = 2e-3;
-    const dominantNote = maxDominantAmplitude < limiar ? 'PAUSA' : frequencyToNote(dominantFrequency);
+    const dominantNote = maxDominantAmplitude < limiar ? 'PAUSA' : frequencyToNote(fundamentalFrequency);
 
     // Salvar nota.txt com a nota detectada
     const notaFilename = `nota_${Date.now()}.txt`;
@@ -100,7 +130,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // Retorno ao frontend
     res.json({
       samples: amplitudeData,
-      dominantFrequency,
+      dominantFrequency: fundamentalFrequency,
       dominantNote,
       downloads: {
         amplitude: `/${ampFilename}`,
@@ -135,7 +165,7 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-// Função corrigida para converter frequência em Hz para nome da nota musical
+// Conversão de frequência em Hz para nome de nota musical
 function frequencyToNote(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
 
@@ -143,7 +173,7 @@ function frequencyToNote(freq) {
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
   const semitonesFromA4 = Math.round(12 * Math.log2(freq / A4));
-  const noteIndex = (semitonesFromA4 + 9 + 1200) % 12; // +1200 para evitar índice negativo
+  const noteIndex = (semitonesFromA4 + 9 + 1200) % 12; // garantir índice positivo
   const octave = 4 + Math.floor((semitonesFromA4 + 9) / 12);
 
   return notas[noteIndex] + octave;
