@@ -13,13 +13,10 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
 
 app.use(express.json());
 
-// Diretório para salvar arquivos txt para download
 const publicDir = path.join(process.cwd(), 'teste');
 if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir);
 }
-
-app.use(express.static(publicDir));
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
   console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
@@ -28,18 +25,17 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   const outputWavPath = inputPath + '.wav';
 
   try {
-    // Converte o áudio para WAV (44.1kHz, mono padrão)
     await convertToWav(inputPath, outputWavPath);
     console.log('✅ Conversão para WAV concluída.');
 
     const wavBuffer = fs.readFileSync(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
-    const sampleRate = 44100; // presumido padrão WAV
+    const sampleRate = 44100;
 
-    // Detecta a frequência dominante pelo FFT caseiro
+    // Usando FFT manual estilo seu projeto C++
     const dominantFreq = getDominantFrequency(samples, sampleRate);
 
-    // Calcula amplitude média para filtro de limiar
+    // Calcula amplitude média para aplicar limiar
     const amplitude = averageAmplitude(samples);
     const limiar = 2e-3;
 
@@ -48,16 +44,15 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       dominantNote = frequencyToNote(dominantFreq);
     }
 
-    // Gera arquivo .txt com a nota para download
+    // Gerar arquivo txt com a nota
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
     fs.writeFileSync(notaPath, dominantNote);
 
-    // Remove arquivos temporários
+    // Limpar arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
-    // Retorna JSON com resultado e link para download da nota
     res.json({
       dominantFrequency: dominantFreq,
       dominantNote,
@@ -65,6 +60,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
         nota: `/${notaFilename}`
       }
     });
+
   } catch (err) {
     console.error('❌ Erro:', err);
     res.status(500).json({ error: 'Erro no processamento do áudio' });
@@ -74,7 +70,6 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 function convertToWav(input, output) {
   return new Promise((resolve, reject) => {
     ffmpeg(input)
-      .outputOptions('-ar 44100', '-ac 1') // taxa amostragem 44.1kHz, mono
       .toFormat('wav')
       .on('end', resolve)
       .on('error', reject)
@@ -82,9 +77,9 @@ function convertToWav(input, output) {
   });
 }
 
-// Extrai samples do WAV ignorando cabeçalho padrão de 44 bytes
 function extractSamplesFromWav(buffer) {
   const samples = [];
+  // Pula cabeçalho WAV padrão de 44 bytes
   for (let i = 44; i < buffer.length; i += 2) {
     const sample = buffer.readInt16LE(i);
     samples.push(sample / 32768);
@@ -100,80 +95,54 @@ function averageAmplitude(samples) {
   return sum / samples.length;
 }
 
-// FFT Cooley-Tukey recursiva (real input)
-// Retorna array de {re, im} complexos
-function fftReal(buffer) {
-  const N = buffer.length;
-
-  // Zero padding para potência de 2
-  if ((N & (N - 1)) !== 0) {
-    const size = 1 << Math.ceil(Math.log2(N));
-    const padded = new Array(size).fill(0);
-    for (let i = 0; i < N; i++) padded[i] = buffer[i];
-    return fftReal(padded);
-  }
-
-  if (N <= 1) return [{ re: buffer[0], im: 0 }];
-
-  const even = fftReal(buffer.filter((_, i) => i % 2 === 0));
-  const odd = fftReal(buffer.filter((_, i) => i % 2 === 1));
-
-  const combined = [];
-  for (let k = 0; k < N / 2; k++) {
-    const t = expComplex(-2 * Math.PI * k / N);
-    const oddPart = complexMul(t, odd[k]);
-    combined[k] = complexAdd(even[k], oddPart);
-    combined[k + N / 2] = complexSub(even[k], oddPart);
-  }
-  return combined;
-}
-
-function expComplex(theta) {
-  return { re: Math.cos(theta), im: Math.sin(theta) };
-}
-function complexAdd(a, b) {
-  return { re: a.re + b.re, im: a.im + b.im };
-}
-function complexSub(a, b) {
-  return { re: a.re - b.re, im: a.im - b.im };
-}
-function complexMul(a, b) {
-  return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re };
-}
-
-// Encontra a frequência dominante no espectro FFT
+// Função ajustada para replicar seu FFT manual do C++
 function getDominantFrequency(samples, sampleRate) {
-  const fft = fftReal(samples);
-  let maxMag = 0;
-  let maxIndex = 0;
-  const N = fft.length;
+  const f1 = 16;
+  const f2 = 1048;
+  const df = 2;
 
-  // Ignora o índice zero (DC)
-  for (let i = 1; i < N / 2; i++) {
-    const mag = Math.sqrt(fft[i].re ** 2 + fft[i].im ** 2);
-    if (mag > maxMag) {
-      maxMag = mag;
-      maxIndex = i;
+  const N = samples.length;
+  const dt = 1 / sampleRate;
+  let maiorMag = 0;
+  let freqDominante = 0;
+
+  for (let f = f1; f <= f2; f += df) {
+    let real = 0;
+    let imag = 0;
+
+    for (let i = 0; i < N; i++) {
+      const t = i * dt;
+      real += samples[i] * Math.cos(2 * Math.PI * f * t);
+      imag += -samples[i] * Math.sin(2 * Math.PI * f * t);
+    }
+
+    const mag = Math.sqrt(real * real + imag * imag);
+
+    if (mag > maiorMag) {
+      maiorMag = mag;
+      freqDominante = f;
     }
   }
 
-  return (maxIndex * sampleRate) / N;
+  return freqDominante;
 }
 
-// Converte frequência para nota musical (mesmo algoritmo C)
+// Conversão frequência -> nota musical igual ao seu código C++
 function frequencyToNote(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
 
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const A4 = 440;
 
-  const n = 12 * Math.log2(freq / A4);
+  const n = 12 * Math.log(freq / A4) / Math.log(2);
   const rounded = Math.round(n + 9);
   const octave = 4 + Math.floor(rounded / 12);
   const noteIndex = ((rounded % 12) + 12) % 12;
 
   return notas[noteIndex] + octave;
 }
+
+app.use(express.static('teste'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
