@@ -135,15 +135,18 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-// Conversão de frequência em Hz para nome de nota musical
+// Função corrigida para converter frequência em Hz para nome da nota musical
 function frequencyToNote(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
+
+  const A4 = 440;
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const n = 12 * Math.log2(freq / 440);
-  const notaIndex = Math.round(n + 9); // A4 é índice 9
-  const r = ((notaIndex % 12) + 12) % 12;
-  const q = Math.floor((notaIndex + 9) / 12);
-  return notas[r] + (4 + q);
+
+  const semitonesFromA4 = Math.round(12 * Math.log2(freq / A4));
+  const noteIndex = (semitonesFromA4 + 9 + 1200) % 12; // +1200 para evitar índice negativo
+  const octave = 4 + Math.floor((semitonesFromA4 + 9) / 12);
+
+  return notas[noteIndex] + octave;
 }
 
 // Servir arquivos públicos
