@@ -10,11 +10,15 @@ import { fft } from 'fft-js';
 const app = express();
 app.use(cors());
 const upload = multer({ dest: 'uploads/' });
+
 ffmpeg.setFfmpegPath(ffmpegStatic);
+
 app.use(express.json());
 
 const publicDir = path.join(process.cwd(), 'teste');
-if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir);
+if (!fs.existsSync(publicDir)) {
+  fs.mkdirSync(publicDir);
+}
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
   console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
@@ -23,16 +27,18 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   const outputWavPath = inputPath + '.wav';
 
   try {
+    // 1. Converter para WAV
     console.log('⚙️ Convertendo para WAV...');
     await convertToWav(inputPath, outputWavPath);
     console.log('✅ Conversão concluída.');
 
+    // 2. Ler amostras do WAV
     const wavBuffer = fs.readFileSync(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
     const sampleRate = 44100;
-    const blockSize = Math.floor(sampleRate * 0.1);
 
-    // Cálculo da amplitude média por bloco (0.1s)
+    // 3. Cálculo da amplitude média por bloco de 0.1s
+    const blockSize = Math.floor(sampleRate * 0.1);
     const amplitudeData = [];
     for (let i = 0; i < samples.length; i += blockSize) {
       const block = samples.slice(i, i + blockSize);
@@ -40,19 +46,20 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    // Salva arquivo amplitude.txt
+    // 4. Salvar arquivo amplitude.txt
     const ampFilename = `amplitude_${Date.now()}.txt`;
     const ampPath = path.join(publicDir, ampFilename);
     const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(ampPath, ampContent);
 
-    // FFT de todas as amostras (com zero-padding)
+    // 5. Aplicar FFT em todas as amostras com zero-padding até potência de 2
     const nextPowerOf2 = n => Math.pow(2, Math.ceil(Math.log2(n)));
     const paddedLength = nextPowerOf2(samples.length);
     const paddedSamples = samples.slice();
-    while (paddedSamples.length < paddedLength) paddedSamples.push(0);
+    while (paddedSamples.length < paddedLength) paddedSamples.push(0); // zero-padding
 
     const phasors = fft(paddedSamples);
+
     const fftData = phasors.slice(0, paddedLength / 2).map((c, idx) => {
       const re = c[0];
       const im = c[1];
@@ -62,22 +69,23 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       };
     });
 
-    // Frequência dominante do espectro total
+    // 6. Determinar frequência dominante
     const max = fftData.reduce((acc, val) => val.amplitude > acc.amplitude ? val : acc, { amplitude: 0 });
     const dominantFrequency = max.frequency;
+
     const limiar = 2e-3;
     const dominantNote = max.amplitude < limiar ? 'PAUSA' : frequencyToNote(dominantFrequency);
 
-    // Salvar nota.txt com a nota detectada
+    // 7. Salvar nota detectada
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
     fs.writeFileSync(notaPath, dominantNote);
 
-    // Remove arquivos temporários
+    // 8. Remover arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
-    // Retorna dados para o front-end
+    // 9. Enviar resposta ao cliente
     res.json({
       samples: amplitudeData,
       dominantFrequency,
@@ -122,7 +130,7 @@ function frequencyToNote(freq) {
   return notas[r] + (4 + q);
 }
 
-// Servir arquivos .txt e .html
+// Servir arquivos .txt
 app.use(express.static('teste'));
 
 const PORT = process.env.PORT || 3000;
