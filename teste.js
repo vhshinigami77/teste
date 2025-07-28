@@ -32,9 +32,6 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const samples = extractSamplesFromWav(wavBuffer);
     const sampleRate = 44100;
 
-    // Usa 1 segundo para autocorrelação para não travar
-    const analyzedSamples = samples.slice(0, Math.min(samples.length, sampleRate));
-
     // --- Amplitude média por bloco ---
     const blockSize = Math.floor(sampleRate * 0.1);
     const amplitudeData = [];
@@ -44,18 +41,17 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    // --- Autocorrelação para detectar frequência fundamental ---
-    const autocorrFreq = detectFundamentalAutocorrelation(analyzedSamples, sampleRate);
-
-    const limiar = 2e-3;
-    const dominantNote = !autocorrFreq || amplitudeData[0].amplitude < limiar
-      ? 'PAUSA'
-      : frequencyToNote(autocorrFreq);
-
     const ampFilename = `amplitude_${Date.now()}.txt`;
     const ampPath = path.join(publicDir, ampFilename);
     const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(ampPath, ampContent);
+
+    // --- Autocorrelação para detectar frequência fundamental ---
+    const autocorrFreq = detectFundamentalAutocorrelation(samples, sampleRate);
+    const limiar = 2e-3;
+    const dominantNote = !autocorrFreq || amplitudeData[0].amplitude < limiar
+      ? 'PAUSA'
+      : frequencyToNote(autocorrFreq);
 
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
@@ -95,6 +91,7 @@ function convertToWav(input, output) {
 // --- Extração de amostras PCM normalizadas ---
 function extractSamplesFromWav(buffer) {
   const samples = [];
+  // Header WAV geralmente tem 44 bytes
   for (let i = 44; i < buffer.length; i += 2) {
     const sample = buffer.readInt16LE(i);
     samples.push(sample / 32768);
@@ -102,27 +99,39 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-// --- Autocorrelação para detectar a frequência fundamental ---
+// --- Autocorrelação normalizada para detectar frequência fundamental ---
 function detectFundamentalAutocorrelation(samples, sampleRate) {
-  const maxLag = Math.floor(sampleRate / 60);    // 60 Hz mínimo
-  const minLag = Math.floor(sampleRate / 1000);  // 1000 Hz máximo
+  const maxLag = Math.floor(sampleRate / 60);   // corresponde a 60 Hz
+  const minLag = Math.floor(sampleRate / 1000); // corresponde a 1000 Hz
 
-  let bestLag = -1;
-  let maxCorrelation = 0;
+  const autocorr = new Array(maxLag + 1).fill(0);
 
   for (let lag = minLag; lag <= maxLag; lag++) {
     let sum = 0;
+    let norm1 = 0;
+    let norm2 = 0;
     for (let i = 0; i < samples.length - lag; i++) {
       sum += samples[i] * samples[i + lag];
+      norm1 += samples[i] * samples[i];
+      norm2 += samples[i + lag] * samples[i + lag];
     }
+    autocorr[lag] = sum / Math.sqrt(norm1 * norm2);
+  }
 
-    if (sum > maxCorrelation) {
-      maxCorrelation = sum;
+  // Encontrar pico máximo dentro da faixa
+  let bestLag = minLag;
+  let maxCorr = autocorr[minLag];
+  for (let lag = minLag + 1; lag <= maxLag; lag++) {
+    if (autocorr[lag] > maxCorr) {
+      maxCorr = autocorr[lag];
       bestLag = lag;
     }
   }
 
-  if (bestLag === -1) return null;
+  if (maxCorr < 0.1) { // limiar para evitar ruído
+    return null;
+  }
+
   return sampleRate / bestLag;
 }
 
