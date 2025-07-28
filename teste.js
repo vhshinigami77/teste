@@ -18,54 +18,50 @@ if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir);
 }
 
-app.post('/upload', async (req, res) => {
-  upload.single('audio')(req, res, async err => {
-    if (err) {
-      return res.status(500).json({ error: 'Erro no upload' });
+app.post('/upload', upload.single('audio'), async (req, res) => {
+  console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
+
+  const inputPath = req.file.path;
+  const outputWavPath = inputPath + '.wav';
+
+  try {
+    await convertToWav(inputPath, outputWavPath);
+    console.log('✅ Conversão para WAV concluída.');
+
+    const wavBuffer = fs.readFileSync(outputWavPath);
+    const samples = extractSamplesFromWav(wavBuffer);
+    const sampleRate = 44100;
+
+    const dominantFreq = getDominantFrequency(samples, sampleRate);
+
+    const amplitude = averageAmplitude(samples);
+    const limiar = 2e-3;
+
+    let dominantNote = 'PAUSA';
+    if (amplitude >= limiar && dominantFreq > 0) {
+      dominantNote = frequencyToNote(dominantFreq);
     }
-    try {
-      console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
 
-      const inputPath = req.file.path;
-      const outputWavPath = inputPath + '.wav';
+    const notaFilename = `nota_${Date.now()}.txt`;
+    const notaPath = path.join(publicDir, notaFilename);
+    fs.writeFileSync(notaPath, dominantNote);
 
-      await convertToWav(inputPath, outputWavPath);
-      console.log('✅ Conversão para WAV concluída.');
+    // Limpar arquivos temporários
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputWavPath);
 
-      const wavBuffer = fs.readFileSync(outputWavPath);
-      const samples = extractSamplesFromWav(wavBuffer);
-      const sampleRate = 44100;
-
-      const dominantFreq = getDominantFrequency(samples, sampleRate);
-
-      const amplitude = averageAmplitude(samples);
-      const limiar = 2e-3;
-
-      let dominantNote = 'PAUSA';
-      if (amplitude >= limiar && dominantFreq > 0) {
-        dominantNote = frequencyToNote(dominantFreq);
+    res.json({
+      dominantFrequency: dominantFreq,
+      dominantNote,
+      downloads: {
+        nota: `/${notaFilename}`
       }
+    });
 
-      const notaFilename = `nota_${Date.now()}.txt`;
-      const notaPath = path.join(publicDir, notaFilename);
-      fs.writeFileSync(notaPath, dominantNote);
-
-      // Remove arquivos temporários
-      fs.unlinkSync(inputPath);
-      fs.unlinkSync(outputWavPath);
-
-      res.json({
-        dominantFrequency: dominantFreq,
-        dominantNote,
-        downloads: {
-          nota: `/${notaFilename}`
-        }
-      });
-    } catch (error) {
-      console.error('❌ Erro:', error);
-      res.status(500).json({ error: 'Erro no processamento do áudio' });
-    }
-  });
+  } catch (err) {
+    console.error('❌ Erro:', err);
+    res.status(500).json({ error: 'Erro no processamento do áudio' });
+  }
 });
 
 function convertToWav(input, output) {
@@ -136,28 +132,34 @@ function complexMul(a, b) {
   return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re };
 }
 
-// Função aprimorada para detectar frequência dominante usando janela Hanning, FFT 8192 e interpolação
 function getDominantFrequency(samples, sampleRate) {
   const N = Math.min(8192, samples.length);
+  if (N < 1024) return 0;
+
+  // Janela de Hanning
   const windowed = new Array(N);
   for (let i = 0; i < N; i++) {
-    const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1))); // janela Hanning
+    const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
     windowed[i] = samples[i] * w;
   }
 
   const fft = fftReal(windowed);
 
   const mags = [];
-  for (let i = 1; i < N / 2 - 1; i++) { // evita out of bounds no pico interpolado
+  for (let i = 1; i < N / 2 - 1; i++) {
     mags[i] = Math.sqrt(fft[i].re ** 2 + fft[i].im ** 2);
   }
 
-  let maxIndex = 1;
-  for (let i = 2; i < N / 2 - 1; i++) {
+  const minBin = Math.ceil(50 * N / sampleRate);
+
+  let maxIndex = minBin;
+  for (let i = minBin + 1; i < N / 2 - 1; i++) {
     if (mags[i] > mags[maxIndex]) maxIndex = i;
   }
 
-  // Interpolação do pico
+  if (mags[maxIndex] < 0.01) return 0;
+
+  // Interpolação de pico para maior precisão
   const alpha = mags[maxIndex - 1];
   const beta = mags[maxIndex];
   const gamma = mags[maxIndex + 1];
@@ -167,15 +169,14 @@ function getDominantFrequency(samples, sampleRate) {
   return binFreq;
 }
 
-// Conversão frequência -> nota musical igual ao C original
 function frequencyToNote(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
 
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const A4 = 440;
 
-  const n = 12 * Math.log(freq / A4) / Math.log(2);
-  const rounded = Math.round(n + 9);
+  const n = 12 * Math.log2(freq / A4);
+  const rounded = Math.round(n) + 9;
   const octave = 4 + Math.floor(rounded / 12);
   const noteIndex = ((rounded % 12) + 12) % 12;
 
