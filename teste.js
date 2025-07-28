@@ -50,7 +50,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(ampPath, ampContent);
 
-    // FFT em blocos
+    // FFT em blocos para achar frequência dominante
     const fftBlockSize = 1024;
     const fftBlocks = Math.floor(samples.length / fftBlockSize);
 
@@ -82,7 +82,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       }
     }
 
-    // Refaz fftData do último bloco para a busca de fundamental
+    // FFT do último bloco para tentar encontrar fundamental real
     const lastBlockSamples = samples.slice((fftBlocks - 1) * fftBlockSize, fftBlocks * fftBlockSize);
     const lastPhasors = fft(lastBlockSamples);
     const fullFftData = lastPhasors.map((c, idx) => {
@@ -95,26 +95,24 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       };
     }).slice(0, fftBlockSize / 2).filter(d => d.frequency >= 60 && d.frequency <= 1000);
 
-    // Função para tentar encontrar a frequência fundamental dividindo harmônicos
+    // Função para achar a frequência fundamental dividindo harmônicos
     function findFundamental(freq, fftData) {
       for (let div = 1; div <= 5; div++) {
         const candidateFreq = freq / div;
-        if (candidateFreq < 60) break; // sair se ficar abaixo do limite
+        if (candidateFreq < 60) break;
 
-        // procura um pico perto da frequência candidata com tolerância de ±5 Hz
         const found = fftData.find(d =>
           Math.abs(d.frequency - candidateFreq) < 5 &&
-          d.amplitude > maxDominantAmplitude * 0.3); // amplitude razoável
+          d.amplitude > maxDominantAmplitude * 0.3);
 
-        if (found) {
-          return candidateFreq;
-        }
+        if (found) return candidateFreq;
       }
-      return freq; // se não achou, retorna a original
+      return freq;
     }
 
     const fundamentalFrequency = findFundamental(dominantFrequency, fullFftData);
 
+    // Limite para considerar silêncio (PAUSA)
     const limiar = 2e-3;
     const dominantNote = maxDominantAmplitude < limiar ? 'PAUSA' : frequencyToNote(fundamentalFrequency);
 
@@ -123,11 +121,11 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const notaPath = path.join(publicDir, notaFilename);
     fs.writeFileSync(notaPath, dominantNote);
 
-    // Limpeza de arquivos temporários
+    // Limpar arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
-    // Retorno ao frontend
+    // Retorno para o frontend
     res.json({
       samples: amplitudeData,
       dominantFrequency: fundamentalFrequency,
@@ -144,7 +142,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   }
 });
 
-// Conversão para WAV via ffmpeg
+// Converter para WAV usando ffmpeg
 function convertToWav(input, output) {
   return new Promise((resolve, reject) => {
     ffmpeg(input)
@@ -155,9 +153,10 @@ function convertToWav(input, output) {
   });
 }
 
-// Extração de amostras PCM normalizadas do WAV
+// Extrair samples PCM normalizados do WAV
 function extractSamplesFromWav(buffer) {
   const samples = [];
+  // 44 bytes offset do header WAV padrão
   for (let i = 44; i < buffer.length; i += 2) {
     const sample = buffer.readInt16LE(i);
     samples.push(sample / 32768);
@@ -165,25 +164,26 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-// Conversão de frequência em Hz para nome de nota musical
+// Converter frequência (Hz) para nota musical (log + arredondamento, igual ao código C)
 function frequencyToNote(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
 
   const A4 = 440;
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-  const semitonesFromA4 = Math.round(12 * Math.log2(freq / A4));
-  const noteIndex = (semitonesFromA4 + 9 + 1200) % 12; // garantir índice positivo
-  const octave = 4 + Math.floor((semitonesFromA4 + 9) / 12);
+  const n = 12 * Math.log2(freq / A4);
+  const nRound = Math.round(n + 9);
 
-  return notas[noteIndex] + octave;
+  const r = nRound % 12;              // índice da nota (0 a 11)
+  const q = Math.floor(nRound / 12); // oitava relativa
+
+  return notas[r] + (4 + q);
 }
 
-// Servir arquivos públicos
+// Servir arquivos públicos na pasta 'teste'
 app.use(express.static('teste'));
 
-// Inicialização do servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor ouvindo na porta ${PORT}`);
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
