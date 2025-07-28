@@ -32,7 +32,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const samples = extractSamplesFromWav(wavBuffer);
     const sampleRate = 44100;
 
-    // --- Amplitude média por bloco (0.1s) ---
+    // --- Amplitude média por bloco de 0.1s ---
     const blockSize = Math.floor(sampleRate * 0.1);
     const amplitudeData = [];
     for (let i = 0; i < samples.length; i += blockSize) {
@@ -41,25 +41,23 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    // Salva arquivo de amplitude
     const ampFilename = `amplitude_${Date.now()}.txt`;
     const ampPath = path.join(publicDir, ampFilename);
     const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(ampPath, ampContent);
 
-    // --- Autocorrelação para detectar frequência fundamental ---
+    // --- Autocorrelação normalizada para detectar frequência fundamental ---
     const autocorrFreq = detectFundamentalAutocorrelation(samples, sampleRate);
     const limiar = 2e-3;
     const dominantNote = !autocorrFreq || amplitudeData[0].amplitude < limiar
       ? 'PAUSA'
-      : frequencyToNoteDetailed(autocorrFreq);
+      : frequencyToNote(autocorrFreq);
 
-    // Salva arquivo de nota
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
     fs.writeFileSync(notaPath, dominantNote);
 
-    // Remove arquivos temporários
+    // Limpeza dos arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
@@ -90,9 +88,10 @@ function convertToWav(input, output) {
   });
 }
 
-// Extração de samples PCM 16-bit normalizados (-1 a 1)
+// Extração de amostras PCM normalizadas do WAV
 function extractSamplesFromWav(buffer) {
   const samples = [];
+  // WAV header tem 44 bytes, cada amostra 2 bytes (16 bits)
   for (let i = 44; i < buffer.length; i += 2) {
     const sample = buffer.readInt16LE(i);
     samples.push(sample / 32768);
@@ -100,68 +99,76 @@ function extractSamplesFromWav(buffer) {
   return samples;
 }
 
-// Autocorrelação para frequência fundamental
+// Autocorrelação normalizada com refinamento de harmônicos
 function detectFundamentalAutocorrelation(samples, sampleRate) {
-  const minFreq = 130;  // limite inferior ~ dó2
+  const minFreq = 130;  // dó2
   const maxFreq = 1000; // limite superior
 
-  const minLag = Math.floor(sampleRate / maxFreq); // menor lag
-  const maxLag = Math.floor(sampleRate / minFreq); // maior lag
+  const minLag = Math.floor(sampleRate / maxFreq);
+  const maxLag = Math.floor(sampleRate / minFreq);
 
   let bestLag = -1;
-  let maxCorrelation = 0;
+  let maxCorr = -Infinity;
+
+  // Autocorrelação normalizada para cada lag
+  function normalizedCorr(lag) {
+    let sum = 0, sum1 = 0, sum2 = 0;
+    for (let i = 0; i < samples.length - lag; i++) {
+      const x = samples[i];
+      const y = samples[i + lag];
+      sum += x * y;
+      sum1 += x * x;
+      sum2 += y * y;
+    }
+    return sum / Math.sqrt(sum1 * sum2 + 1e-10); // evita divisão por zero
+  }
 
   for (let lag = minLag; lag <= maxLag; lag++) {
-    let sum = 0;
-    for (let i = 0; i < samples.length - lag; i++) {
-      sum += samples[i] * samples[i + lag];
-    }
-    if (sum > maxCorrelation) {
-      maxCorrelation = sum;
+    const corr = normalizedCorr(lag);
+    if (corr > maxCorr) {
+      maxCorr = corr;
       bestLag = lag;
     }
   }
 
   if (bestLag === -1) return null;
 
-  // Refinamento opcional para evitar sub-harmônicos
-  /*
+  // Refinar para evitar sub-harmônicos (harmônicos múltiplos)
   for (let divisor = 2; divisor <= 4; divisor++) {
-    let candidateLag = Math.floor(bestLag / divisor);
+    const candidateLag = Math.floor(bestLag / divisor);
     if (candidateLag < minLag) break;
 
-    let candidateSum = 0;
-    for (let i = 0; i < samples.length - candidateLag; i++) {
-      candidateSum += samples[i] * samples[i + candidateLag];
-    }
-
-    if (candidateSum > 0.8 * maxCorrelation) { 
+    const candidateCorr = normalizedCorr(candidateLag);
+    if (candidateCorr > 0.8 * maxCorr) {
       bestLag = candidateLag;
-      maxCorrelation = candidateSum;
+      maxCorr = candidateCorr;
     }
   }
-  */
 
   return sampleRate / bestLag;
 }
 
-// Conversão frequência -> nota musical com cents de desvio
-function frequencyToNoteDetailed(freq) {
+// Converter frequência para nota musical com cents
+function frequencyToNote(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
 
   const A4 = 440;
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
+  // Cálculo do número de semitons da frequência em relação ao A4
   const semitonesFromA4 = 12 * Math.log2(freq / A4);
   const semitonesRounded = Math.round(semitonesFromA4);
-  const cents = Math.round((semitonesFromA4 - semitonesRounded) * 100);
 
-  let noteIndex = (semitonesRounded + 9) % 12;
-  if (noteIndex < 0) noteIndex += 12;
+  // Cents = 100 * diferença fracionária
+  const cents = Math.round(100 * (semitonesFromA4 - semitonesRounded));
 
+  const noteIndex = (semitonesRounded + 9 + 1200) % 12; // 9 = offset para C
   const octave = 4 + Math.floor((semitonesRounded + 9) / 12);
 
-  return `${notas[noteIndex]}${octave} (${cents >= 0 ? '+' : ''}${cents} cents)`;
+  const noteName = notas[noteIndex] + octave;
+  const centsStr = cents === 0 ? '' : (cents > 0 ? ` (+${cents} cents)` : ` (${cents} cents)`);
+
+  return `${noteName}${centsStr}`;
 }
 
 app.use(express.static('teste'));
