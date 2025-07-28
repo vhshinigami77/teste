@@ -32,6 +32,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const samples = extractSamplesFromWav(wavBuffer);
     const sampleRate = 44100;
 
+    // Usa 1 segundo para autocorrelação para não travar
+    const analyzedSamples = samples.slice(0, Math.min(samples.length, sampleRate));
+
     // --- Amplitude média por bloco ---
     const blockSize = Math.floor(sampleRate * 0.1);
     const amplitudeData = [];
@@ -41,17 +44,18 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    const ampFilename = `amplitude_${Date.now()}.txt`;
-    const ampPath = path.join(publicDir, ampFilename);
-    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
-    fs.writeFileSync(ampPath, ampContent);
-
     // --- Autocorrelação para detectar frequência fundamental ---
-    const autocorrFreq = detectFundamentalAutocorrelation(samples, sampleRate);
+    const autocorrFreq = detectFundamentalAutocorrelation(analyzedSamples, sampleRate);
+
     const limiar = 2e-3;
     const dominantNote = !autocorrFreq || amplitudeData[0].amplitude < limiar
       ? 'PAUSA'
       : frequencyToNote(autocorrFreq);
+
+    const ampFilename = `amplitude_${Date.now()}.txt`;
+    const ampPath = path.join(publicDir, ampFilename);
+    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
+    fs.writeFileSync(ampPath, ampContent);
 
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
@@ -100,8 +104,8 @@ function extractSamplesFromWav(buffer) {
 
 // --- Autocorrelação para detectar a frequência fundamental ---
 function detectFundamentalAutocorrelation(samples, sampleRate) {
-  const maxLag = sampleRate / 60; // 60 Hz mínimo
-  const minLag = sampleRate / 1000; // 1000 Hz máximo
+  const maxLag = Math.floor(sampleRate / 60);    // 60 Hz mínimo
+  const minLag = Math.floor(sampleRate / 1000);  // 1000 Hz máximo
 
   let bestLag = -1;
   let maxCorrelation = 0;
