@@ -41,17 +41,18 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    const ampFilename = `amplitude_${Date.now()}.txt`;
-    const ampPath = path.join(publicDir, ampFilename);
-    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
-    fs.writeFileSync(ampPath, ampContent);
-
     // --- Autocorrelação para detectar frequência fundamental ---
     const autocorrFreq = detectFundamentalAutocorrelation(samples, sampleRate);
     const limiar = 2e-3;
     const dominantNote = !autocorrFreq || amplitudeData[0].amplitude < limiar
       ? 'PAUSA'
-      : frequencyToNote(autocorrFreq);
+      : frequencyToNoteDetailed(autocorrFreq);
+
+    // Salvar arquivos txt
+    const ampFilename = `amplitude_${Date.now()}.txt`;
+    const ampPath = path.join(publicDir, ampFilename);
+    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
+    fs.writeFileSync(ampPath, ampContent);
 
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
@@ -103,8 +104,8 @@ function detectFundamentalAutocorrelation(samples, sampleRate) {
   const minFreq = 130;  // limite inferior ~ dó2
   const maxFreq = 1000; // limite superior
 
-  const minLag = Math.floor(sampleRate / maxFreq); // menor lag
-  const maxLag = Math.floor(sampleRate / minFreq); // maior lag
+  const minLag = Math.floor(sampleRate / maxFreq);
+  const maxLag = Math.floor(sampleRate / minFreq);
 
   let bestLag = -1;
   let maxCorrelation = 0;
@@ -132,7 +133,7 @@ function detectFundamentalAutocorrelation(samples, sampleRate) {
       candidateSum += samples[i] * samples[i + candidateLag];
     }
 
-    if (candidateSum > 0.8 * maxCorrelation) { 
+    if (candidateSum > 0.8 * maxCorrelation) {
       bestLag = candidateLag;
       maxCorrelation = candidateSum;
     }
@@ -141,18 +142,20 @@ function detectFundamentalAutocorrelation(samples, sampleRate) {
   return sampleRate / bestLag;
 }
 
-// --- Converter frequência para nota musical ---
-function frequencyToNote(freq) {
+// --- Converter frequência para nota musical com cents ---
+function frequencyToNoteDetailed(freq) {
   if (!freq || freq <= 0) return 'PAUSA';
 
   const A4 = 440;
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-  const semitonesFromA4 = Math.round(12 * Math.log2(freq / A4));
-  const noteIndex = (semitonesFromA4 + 9 + 1200) % 12;
-  const octave = 4 + Math.floor((semitonesFromA4 + 9) / 12);
+  const semitonesFromA4 = 12 * Math.log2(freq / A4);
+  const semitonesRounded = Math.round(semitonesFromA4);
+  const cents = Math.round((semitonesFromA4 - semitonesRounded) * 100);
+  const noteIndex = (semitonesRounded + 9 + 1200) % 12;
+  const octave = 4 + Math.floor((semitonesRounded + 9) / 12);
 
-  return notas[noteIndex] + octave;
+  return `${notas[noteIndex]}${octave} (${cents >= 0 ? '+' : ''}${cents} cents)`;
 }
 
 app.use(express.static('teste'));
