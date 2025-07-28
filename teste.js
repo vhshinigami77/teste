@@ -1,3 +1,4 @@
+// backend.mjs
 import express from 'express';
 import multer from 'multer';
 import cors from 'cors';
@@ -10,6 +11,7 @@ import { fft } from 'fft-js';
 const app = express();
 app.use(cors());
 const upload = multer({ dest: 'uploads/' });
+
 ffmpeg.setFfmpegPath(ffmpegStatic);
 app.use(express.json());
 
@@ -19,23 +21,19 @@ if (!fs.existsSync(publicDir)) {
 }
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
-  console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
-
   const inputPath = req.file.path;
   const outputWavPath = inputPath + '.wav';
 
   try {
-    console.log('⚙️ Convertendo para WAV...');
     await convertToWav(inputPath, outputWavPath);
-    console.log('✅ Conversão concluída.');
 
     const wavBuffer = fs.readFileSync(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
+
     const sampleRate = 44100;
-
     const blockSize = Math.floor(sampleRate * 0.1);
-    const amplitudeData = [];
 
+    const amplitudeData = [];
     for (let i = 0; i < samples.length; i += blockSize) {
       const block = samples.slice(i, i + blockSize);
       const avg = block.reduce((acc, v) => acc + Math.abs(v), 0) / block.length;
@@ -47,61 +45,33 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
     fs.writeFileSync(ampPath, ampContent);
 
-    // FFT
-    const fftBlockSize = 1024;
-    const fftBlocks = Math.floor(samples.length / fftBlockSize);
-    let maxDominantAmplitude = 0;
-    let dominantFrequency = 0;
+    const fftBlockSize = 2048;
+    const blockStart = Math.floor(samples.length / 3);
+    const fftSamples = samples.slice(blockStart, blockStart + fftBlockSize);
 
-    for (let i = 0; i < fftBlocks; i++) {
-      const blockSamples = samples.slice(i * fftBlockSize, (i + 1) * fftBlockSize);
-      const phasors = fft(blockSamples);
+    const phasors = fft(fftSamples);
+    const fftData = phasors.slice(0, fftBlockSize / 2).map((c, idx) => {
+      const re = c[0], im = c[1];
+      return {
+        frequency: (idx * sampleRate) / fftBlockSize,
+        amplitude: Math.sqrt(re * re + im * im)
+      };
+    }).filter(d => d.frequency >= 60 && d.frequency <= 1000);
 
-      const fftData = phasors.map((c, idx) => {
-        const re = c[0];
-        const im = c[1];
-        const freq = (idx * sampleRate) / fftBlockSize;
-        return { frequency: freq, amplitude: Math.sqrt(re * re + im * im) };
-      }).slice(0, fftBlockSize / 2).filter(d => d.frequency >= 60 && d.frequency <= 1000);
-
-      const blockMax = fftData.reduce((acc, val) =>
-        val.amplitude > acc.amplitude ? val : acc, { amplitude: 0 });
-
-      if (blockMax.amplitude > maxDominantAmplitude) {
-        maxDominantAmplitude = blockMax.amplitude;
-        dominantFrequency = blockMax.frequency;
+    const harmonicWeighted = fftData.map((d, i) => {
+      let score = d.amplitude;
+      for (let h = 2; h <= 5; h++) {
+        const harmonicFreq = d.frequency * h;
+        const harmonic = fftData.find(hf => Math.abs(hf.frequency - harmonicFreq) < 5);
+        if (harmonic) score += harmonic.amplitude * 0.5; // peso menor
       }
-    }
+      return { ...d, score };
+    });
 
-    const lastBlockSamples = samples.slice((fftBlocks - 1) * fftBlockSize, fftBlocks * fftBlockSize);
-    const lastPhasors = fft(lastBlockSamples);
-
-    const fullFftData = lastPhasors.map((c, idx) => {
-      const re = c[0];
-      const im = c[1];
-      const freq = (idx * sampleRate) / fftBlockSize;
-      return { frequency: freq, amplitude: Math.sqrt(re * re + im * im) };
-    }).slice(0, fftBlockSize / 2).filter(d => d.frequency >= 60 && d.frequency <= 1000);
-
-    // Função melhorada para encontrar a fundamental
-    function findFundamental(freq, fftData) {
-      for (let div = 2; div <= 5; div++) {
-        const candidateFreq = freq / div;
-        if (candidateFreq < 60) break;
-
-        const found = fftData.find(d =>
-          Math.abs(d.frequency - candidateFreq) < 10 &&
-          d.amplitude > maxDominantAmplitude * 0.1);
-
-        if (found) return candidateFreq;
-      }
-      return freq;
-    }
-
-    const fundamentalFrequency = findFundamental(dominantFrequency, fullFftData);
+    const strongest = harmonicWeighted.reduce((a, b) => (b.score > a.score ? b : a));
 
     const limiar = 2e-3;
-    const dominantNote = maxDominantAmplitude < limiar ? 'PAUSA' : frequencyToNote(fundamentalFrequency);
+    const dominantNote = strongest.amplitude < limiar ? 'PAUSA' : frequencyToNote(strongest.frequency);
 
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
@@ -112,7 +82,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     res.json({
       samples: amplitudeData,
-      dominantFrequency: fundamentalFrequency,
+      dominantFrequency: parseFloat(strongest.frequency.toFixed(2)),
       dominantNote,
       downloads: {
         amplitude: `/${ampFilename}`,
@@ -121,7 +91,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ Erro:', err);
+    console.error('Erro:', err);
     res.status(500).json({ error: 'Erro no processamento do áudio' });
   }
 });
@@ -150,11 +120,9 @@ function frequencyToNote(freq) {
 
   const A4 = 440;
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
   const semitonesFromA4 = Math.round(12 * Math.log2(freq / A4));
   const noteIndex = (semitonesFromA4 + 9 + 1200) % 12;
   const octave = 4 + Math.floor((semitonesFromA4 + 9) / 12);
-
   return notas[noteIndex] + octave;
 }
 
