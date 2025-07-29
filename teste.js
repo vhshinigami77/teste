@@ -5,120 +5,159 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import fs from 'fs';
 import path from 'path';
-import wav from 'node-wav';
 
 const app = express();
 app.use(cors());
 const upload = multer({ dest: 'uploads/' });
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
-const publicDir = path.join(process.cwd(), 'public');
-if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir);
+app.use(express.json());
+
+const publicDir = path.join(process.cwd(), 'teste');
+if (!fs.existsSync(publicDir)) {
+  fs.mkdirSync(publicDir);
+}
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
+  console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
+
   const inputPath = req.file.path;
   const outputWavPath = inputPath + '.wav';
 
   try {
     await convertToWav(inputPath, outputWavPath);
-    const buffer = fs.readFileSync(outputWavPath);
-    const result = wav.decode(buffer);
-    const channelData = result.channelData[0]; // Usar só o canal esquerdo (mono)
-    const sampleRate = result.sampleRate;
+    console.log('✅ Conversão para WAV concluída.');
 
-    const windowSamples = Math.floor(sampleRate * 0.5); // Janela de 0.5s
-    if (channelData.length < windowSamples) {
-      throw new Error('Áudio muito curto para análise (menos de 0.5s)');
+    const wavBuffer = fs.readFileSync(outputWavPath);
+    const samples = extractSamplesFromWav(wavBuffer);
+    const sampleRate = 44100;
+
+    // --- Amplitude média por bloco ---
+    const blockSize = Math.floor(sampleRate * 0.1);
+    const amplitudeData = [];
+    for (let i = 0; i < samples.length; i += blockSize) {
+      const block = samples.slice(i, i + blockSize);
+      const avg = block.reduce((acc, v) => acc + Math.abs(v), 0) / block.length;
+      amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
     }
 
-    const segment = Array.from(channelData.slice(0, windowSamples));
+    const ampFilename = `amplitude_${Date.now()}.txt`;
+    const ampPath = path.join(publicDir, ampFilename);
+    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
+    fs.writeFileSync(ampPath, ampContent);
 
-    const freqResult = dftDominantFrequency(segment, sampleRate, 16, 1048, 2);
-    const freq = freqResult.freq;
-    const amplitude = freqResult.amplitude;
+    // --- Autocorrelação para detectar frequência fundamental ---
+    const autocorrFreq = detectFundamentalAutocorrelation(samples, sampleRate);
+    const limiar = 2e-3;
+    const dominantNote = !autocorrFreq || amplitudeData[0].amplitude < limiar
+      ? 'PAUSA'
+      : frequencyToNote(autocorrFreq);
 
-    const threshold = 2e-3;
-    let note = 'PAUSA';
-    if (amplitude > threshold && freq > 0) {
-      note = frequencyToNote(freq);
-    }
+    const notaFilename = `nota_${Date.now()}.txt`;
+    const notaPath = path.join(publicDir, notaFilename);
+    fs.writeFileSync(notaPath, dominantNote);
 
-    const filename = `nota_${Date.now()}.txt`;
-    const notaPath = path.join(publicDir, filename);
-    fs.writeFileSync(notaPath, note);
-
+    // Limpeza dos arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
     res.json({
-      dominantFrequency: freq.toFixed(2),
-      dominantNote: note,
+      samples: amplitudeData,
+      dominantFrequency: autocorrFreq,
+      dominantNote,
       downloads: {
-        nota: `/${filename}`
+        amplitude: `/${ampFilename}`,
+        nota: `/${notaFilename}`
       }
     });
 
   } catch (err) {
     console.error('❌ Erro:', err);
-    res.status(500).json({
-      error: 'Erro no envio/análise.',
-      dominantNote: 'PAUSA',
-      dominantFrequency: 'Hz'
-    });
+    res.status(500).json({ error: 'Erro no processamento do áudio' });
   }
 });
 
+// --- Conversão para WAV ---
 function convertToWav(input, output) {
   return new Promise((resolve, reject) => {
     ffmpeg(input)
-      .audioChannels(1)
-      .audioFrequency(44100)
-      .format('wav')
+      .toFormat('wav')
       .on('end', resolve)
       .on('error', reject)
       .save(output);
   });
 }
 
-function dftDominantFrequency(samples, sampleRate, fStart, fEnd, df) {
-  const dt = 1 / sampleRate;
-  let maxMag = 0;
-  let fDominant = 0;
+// --- Extração de amostras PCM normalizadas ---
+function extractSamplesFromWav(buffer) {
+  const samples = [];
+  for (let i = 44; i < buffer.length; i += 2) {
+    const sample = buffer.readInt16LE(i);
+    samples.push(sample / 32768);
+  }
+  return samples;
+}
 
-  for (let f = fStart; f <= fEnd; f += df) {
-    let real = 0;
-    let imag = 0;
-    for (let i = 0; i < samples.length; i++) {
-      const angle = 2 * Math.PI * f * i * dt;
-      real += samples[i] * Math.cos(angle);
-      imag -= samples[i] * Math.sin(angle);
+// --- Autocorrelação para detectar a frequência fundamental com refinamento ---
+function detectFundamentalAutocorrelation(samples, sampleRate) {
+  const minFreq = 130;  // limite inferior ~ dó2
+  const maxFreq = 1000; // limite superior
+
+  const minLag = Math.floor(sampleRate / maxFreq); // menor lag
+  const maxLag = Math.floor(sampleRate / minFreq); // maior lag
+
+  let bestLag = -1;
+  let maxCorrelation = 0;
+
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let sum = 0;
+    for (let i = 0; i < samples.length - lag; i++) {
+      sum += samples[i] * samples[i + lag];
     }
-    real *= dt;
-    imag *= dt;
-
-    const magnitude = Math.sqrt(real * real + imag * imag);
-    if (magnitude > maxMag) {
-      maxMag = magnitude;
-      fDominant = f;
+    if (sum > maxCorrelation) {
+      maxCorrelation = sum;
+      bestLag = lag;
     }
   }
 
-  return { freq: fDominant, amplitude: maxMag };
+  if (bestLag === -1) return null;
+
+  // Refinar para evitar sub-harmônicos
+  for (let divisor = 2; divisor <= 4; divisor++) {
+    let candidateLag = Math.floor(bestLag / divisor);
+    if (candidateLag < minLag) break;
+
+    let candidateSum = 0;
+    for (let i = 0; i < samples.length - candidateLag; i++) {
+      candidateSum += samples[i] * samples[i + candidateLag];
+    }
+
+    if (candidateSum > 0.8 * maxCorrelation) { 
+      bestLag = candidateLag;
+      maxCorrelation = candidateSum;
+    }
+  }
+
+  return sampleRate / bestLag;
 }
 
+// --- Converter frequência para nota musical ---
 function frequencyToNote(freq) {
+  if (!freq || freq <= 0) return 'PAUSA';
+
   const A4 = 440;
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const n = 12 * Math.log2(freq / A4);
-  const rounded = Math.round(n);
-  const noteIndex = (rounded + 9 + 12) % 12;
-  const octave = 4 + Math.floor((rounded + 9) / 12);
+
+  const semitonesFromA4 = Math.round(12 * Math.log2(freq / A4));
+  const noteIndex = (semitonesFromA4 + 9 + 1200) % 12;
+  const octave = 4 + Math.floor((semitonesFromA4 + 9) / 12);
+
   return notas[noteIndex] + octave;
 }
 
-app.use(express.static('public'));
+app.use(express.static('teste'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  console.log(`Servidor ouvindo na porta ${PORT}`);
 });
