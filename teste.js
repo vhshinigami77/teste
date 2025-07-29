@@ -18,21 +18,24 @@ if (!fs.existsSync(publicDir)) {
 }
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
+  console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
+
   const inputPath = req.file.path;
   const outputWavPath = inputPath + '.wav';
 
   try {
     await convertToWav(inputPath, outputWavPath);
+    console.log('✅ Conversão para WAV concluída.');
+
     const wavBuffer = fs.readFileSync(outputWavPath);
     const samples = extractSamplesFromWav(wavBuffer);
     const sampleRate = 44100;
 
-    const duration = 0.5; // janela de 0.5s
-    const windowSize = Math.min(samples.length, Math.floor(sampleRate * duration));
-    const slicedSamples = samples.slice(0, windowSize);
+    const windowSize = Math.floor(sampleRate * 0.5); // 0.5 segundos
+    const analysisWindow = samples.slice(0, windowSize);
 
-    const { dominantFreq, magnitude } = getDominantFrequencyDFT(slicedSamples, sampleRate);
-    const amplitude = averageAmplitude(slicedSamples);
+    const { freq: dominantFreq } = getDominantFrequencyDFT(analysisWindow, sampleRate);
+    const amplitude = averageAmplitude(analysisWindow);
     const limiar = 2e-3;
 
     let dominantNote = 'PAUSA';
@@ -42,13 +45,13 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     const notaFilename = `nota_${Date.now()}.txt`;
     const notaPath = path.join(publicDir, notaFilename);
-    fs.writeFileSync(notaPath, dominantNote);
+    fs.writeFileSync(notaPath, typeof dominantNote === 'string' ? dominantNote : 'PAUSA');
 
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputWavPath);
 
     res.json({
-      dominantFrequency: parseFloat(dominantFreq.toFixed(2)),
+      dominantFrequency: dominantFreq,
       dominantNote,
       downloads: {
         nota: `/${notaFilename}`
@@ -81,21 +84,21 @@ function extractSamplesFromWav(buffer) {
 }
 
 function averageAmplitude(samples) {
-  const sum = samples.reduce((a, b) => a + Math.abs(b), 0);
+  let sum = 0;
+  for (const s of samples) sum += Math.abs(s);
   return sum / samples.length;
 }
 
-// DFT manual com df = 2 Hz de 16 até 1048 Hz
 function getDominantFrequencyDFT(samples, sampleRate) {
   const dt = 1 / sampleRate;
-  const t = samples.map((_, i) => i * dt);
   const f1 = 16;
   const f2 = 1048;
   const df = 2;
-  const totalf = Math.round((f2 - f1) / df) + 1;
+  const totalf = Math.floor((f2 - f1) / df) + 1;
 
-  let maxMag = 0;
-  let dominantFreq = 0;
+  let maxMagnitude = 0;
+  let peakIndex = 0;
+  const magnitudes = [];
 
   for (let j = 0; j < totalf; j++) {
     const f = f1 + j * df;
@@ -103,31 +106,45 @@ function getDominantFrequencyDFT(samples, sampleRate) {
     let imag = 0;
 
     for (let i = 0; i < samples.length; i++) {
-      real += samples[i] * Math.cos(2 * Math.PI * f * t[i]);
-      imag += -samples[i] * Math.sin(2 * Math.PI * f * t[i]);
+      const angle = 2 * Math.PI * f * i * dt;
+      real += samples[i] * Math.cos(angle);
+      imag -= samples[i] * Math.sin(angle);
     }
 
     real *= dt;
     imag *= dt;
-
     const mag = Math.sqrt(real * real + imag * imag);
-    if (mag > maxMag) {
-      maxMag = mag;
-      dominantFreq = f;
+    magnitudes.push(mag);
+
+    if (mag > maxMagnitude) {
+      maxMagnitude = mag;
+      peakIndex = j;
     }
   }
 
-  return { dominantFreq, magnitude: maxMag };
+  const f_peak = f1 + peakIndex * df;
+
+  // Interpolação parabólica
+  let refinedFreq = f_peak;
+  if (peakIndex > 0 && peakIndex < totalf - 1) {
+    const y1 = magnitudes[peakIndex - 1];
+    const y2 = magnitudes[peakIndex];
+    const y3 = magnitudes[peakIndex + 1];
+
+    const p = (y3 - y1) / (2 * (2 * y2 - y1 - y3));
+    refinedFreq = f1 + (peakIndex + p) * df;
+  }
+
+  return { freq: refinedFreq, amplitude: maxMagnitude };
 }
 
-// Conversão robusta freq -> nota
 function frequencyToNote(freq) {
-  if (!freq || freq <= 0) return 'PAUSA';
+  if (!freq || isNaN(freq) || freq <= 0) return 'PAUSA';
 
   const A4 = 440;
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const n = Math.round(12 * Math.log2(freq / A4));
-  const noteIndex = (n + 9 + 12) % 12; // A4 = index 9
+  const noteIndex = ((n + 9) % 12 + 12) % 12;
   const octave = 4 + Math.floor((n + 9) / 12);
   return notas[noteIndex] + octave;
 }
