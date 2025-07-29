@@ -8,97 +8,15 @@ import path from 'path';
 
 const app = express();
 app.use(cors());
-
-// Configuração do multer para receber uploads na pasta 'uploads/'
 const upload = multer({ dest: 'uploads/' });
-
-// Configura o caminho do ffmpeg
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
 app.use(express.json());
 
-// Cria a pasta pública para salvar arquivos de saída (se não existir)
 const publicDir = path.join(process.cwd(), 'teste');
-if (!fs.existsSync(publicDir)) {
-  fs.mkdirSync(publicDir);
-}
+if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir);
 
-// Endpoint para receber arquivo de áudio via POST
-app.post('/upload', async (req, res) => {
-  // Executa o middleware multer para capturar arquivo 'audio'
-  upload.single('audio')(req, res, async (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Erro no upload do arquivo' });
-    }
-
-    console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
-
-    const inputPath = req.file.path;
-    const outputWavPath = inputPath + '.wav';
-
-    try {
-      // Converte o áudio enviado para formato WAV
-      await convertToWav(inputPath, outputWavPath);
-      console.log('✅ Conversão para WAV concluída.');
-
-      // Lê o arquivo WAV convertido em buffer
-      const wavBuffer = fs.readFileSync(outputWavPath);
-
-      // Extrai amostras normalizadas do WAV (valores entre -1 e 1)
-      const samples = extractSamplesFromWav(wavBuffer);
-
-      const sampleRate = 44100; // taxa de amostragem fixa usada no projeto
-
-      // --- Calcula amplitude média em blocos de 0.1s ---
-      const blockSize = Math.floor(sampleRate * 0.1); // número de amostras por bloco
-      const amplitudeData = [];
-      for (let i = 0; i < samples.length; i += blockSize) {
-        const block = samples.slice(i, i + blockSize);
-        // Média da amplitude absoluta das amostras do bloco
-        const avg = block.reduce((acc, v) => acc + Math.abs(v), 0) / block.length;
-        amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
-      }
-
-      // --- Detecta frequência fundamental via autocorrelação ---
-      const dominantFreq = detectFundamentalAutocorrelation(samples, sampleRate);
-
-      // --- Converte frequência e amplitude do primeiro bloco em nota ---
-      const dominantNote = frequencyToNote(dominantFreq, amplitudeData[0]?.amplitude || 0);
-
-      // Salva os dados de amplitude em arquivo TXT na pasta pública
-      const ampFilename = `amplitude_${Date.now()}.txt`;
-      const ampPath = path.join(publicDir, ampFilename);
-      const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
-      fs.writeFileSync(ampPath, ampContent);
-
-      // Salva a nota detectada em arquivo TXT na pasta pública
-      const notaFilename = `nota_${Date.now()}.txt`;
-      const notaPath = path.join(publicDir, notaFilename);
-      fs.writeFileSync(notaPath, dominantNote);
-
-      // Remove arquivos temporários do upload e conversão
-      fs.unlinkSync(inputPath);
-      fs.unlinkSync(outputWavPath);
-
-      // Retorna JSON com os dados para o front-end
-      res.json({
-        samples: amplitudeData,
-        dominantFrequency: dominantFreq,
-        dominantNote,
-        downloads: {
-          amplitude: `/${ampFilename}`,
-          nota: `/${notaFilename}`
-        }
-      });
-
-    } catch (error) {
-      console.error('❌ Erro:', error);
-      res.status(500).json({ error: 'Erro no processamento do áudio' });
-    }
-  });
-});
-
-// Função para converter arquivo de áudio para WAV usando ffmpeg
+// --- Conversão para WAV ---
 function convertToWav(input, output) {
   return new Promise((resolve, reject) => {
     ffmpeg(input)
@@ -109,92 +27,148 @@ function convertToWav(input, output) {
   });
 }
 
-// Função que extrai amostras do arquivo WAV e normaliza para -1..1
+// --- Extração de amostras PCM normalizadas de arquivo WAV ---
 function extractSamplesFromWav(buffer) {
   const samples = [];
-  // Ignora cabeçalho WAV (44 bytes)
+  // WAV header = 44 bytes
   for (let i = 44; i < buffer.length; i += 2) {
-    // Leitura de amostra 16-bit little-endian
     const sample = buffer.readInt16LE(i);
-    samples.push(sample / 32768); // normaliza para -1 a 1
+    samples.push(sample / 32768); // Normaliza entre -1 e 1
   }
   return samples;
 }
 
-// Função que detecta a frequência fundamental usando autocorrelação
-function detectFundamentalAutocorrelation(samples, sampleRate) {
-  // Define faixa de frequências consideradas (130 Hz ~ dó2 até 1000 Hz)
-  const minFreq = 130;
-  const maxFreq = 1000;
+// --- Cálculo da Transformada Discreta de Fourier (simplificado) ---
+function calculateDFT(samples, sampleRate) {
+  const f1 = 16;      // Frequência mínima (Hz)
+  const f2 = 1048;    // Frequência máxima (Hz)
+  const df = 2;       // Passo em Hz
+  const dt = 1 / sampleRate;
 
-  // Calcula os limites de lag (em número de amostras) para autocorrelação
-  const minLag = Math.floor(sampleRate / maxFreq);
-  const maxLag = Math.floor(sampleRate / minFreq);
+  const totalf = Math.round((f2 - f1) / df) + 1;
+  const magnitude = new Array(totalf);
 
-  let bestLag = -1;
-  let maxCorrelation = 0;
+  let maiorMag = 0;
+  let freqDominante = 0;
 
-  // Loop para encontrar o lag que maximiza a autocorrelação
-  for (let lag = minLag; lag <= maxLag; lag++) {
-    let sum = 0;
-    for (let i = 0; i < samples.length - lag; i++) {
-      sum += samples[i] * samples[i + lag];
+  for (let j = 0; j < totalf; j++) {
+    const f = f1 + j * df;
+    let real = 0;
+    let imag = 0;
+
+    for (let i = 0; i < samples.length; i++) {
+      real += samples[i] * Math.cos(2 * Math.PI * f * i * dt);
+      imag += -samples[i] * Math.sin(2 * Math.PI * f * i * dt);
     }
-    if (sum > maxCorrelation) {
-      maxCorrelation = sum;
-      bestLag = lag;
-    }
-  }
+    real *= dt;
+    imag *= dt;
 
-  if (bestLag === -1) return null;
+    magnitude[j] = Math.sqrt(real * real + imag * imag);
 
-  // Refinamento para evitar falsos harmônicos (sub-harmônicos)
-  for (let divisor = 2; divisor <= 4; divisor++) {
-    let candidateLag = Math.floor(bestLag / divisor);
-    if (candidateLag < minLag) break;
-
-    let candidateSum = 0;
-    for (let i = 0; i < samples.length - candidateLag; i++) {
-      candidateSum += samples[i] * samples[i + candidateLag];
-    }
-
-    // Se a autocorrelação do candidato for razoavelmente alta, escolhe ele
-    if (candidateSum > 0.8 * maxCorrelation) {
-      bestLag = candidateLag;
-      maxCorrelation = candidateSum;
+    if (magnitude[j] > maiorMag) {
+      maiorMag = magnitude[j];
+      freqDominante = f;
     }
   }
 
-  // Retorna a frequência fundamental estimada
-  return sampleRate / bestLag;
+  return { freqDominante, maiorMag, magnitude, f1, df, totalf };
 }
 
-// Função que converte frequência e amplitude para nota musical considerando limiar
-function frequencyToNote(freq, amplitude) {
-  const limiar = 2e-3;
+// --- Converter frequência para nota musical ---
+function frequencyToNote(freq, amplitude, limiar = 2e-3) {
+  if (!freq || freq <= 0 || amplitude < limiar) return 'PAUSA';
 
-  // Se a frequência for inválida ou amplitude abaixo do limiar, retorna "PAUSA"
-  if (!freq || freq <= 0 || amplitude < limiar) {
-    return 'PAUSA';
-  }
-
-  // Nomes das notas numa oitava (de C a B)
   const notas = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-  // Cálculo da posição da nota relativa a 440 Hz (Lá4)
   const n = 12 * Math.log2(freq / 440);
   const rounded = Math.round(n + 9);
-  const q = Math.floor(rounded / 12);
-  const r = rounded % 12;
+  const noteIndex = ((rounded % 12) + 12) % 12; // mod 12
+  const octave = 4 + Math.floor((rounded) / 12);
 
-  // Retorna a nota concatenada com a oitava (4 + q)
-  return notas[r] + (4 + q);
+  return notas[noteIndex] + octave;
 }
 
-// Servir arquivos estáticos da pasta 'teste' para download pelo front-end
+app.post('/upload', upload.single('audio'), async (req, res) => {
+  console.log(`🚀 Arquivo recebido: ${req.file.originalname} (${req.file.size} bytes)`);
+
+  const inputPath = req.file.path;
+  const outputWavPath = inputPath + '.wav';
+
+  try {
+    // Converter para WAV
+    await convertToWav(inputPath, outputWavPath);
+    console.log('✅ Conversão para WAV concluída.');
+
+    // Ler WAV convertido
+    const wavBuffer = fs.readFileSync(outputWavPath);
+    const samples = extractSamplesFromWav(wavBuffer);
+    const sampleRate = 44100; // fixo, deve ser conferido
+
+    // Calcular amplitude média por blocos de 0.1s
+    const blockSize = Math.floor(sampleRate * 0.1);
+    const amplitudeData = [];
+    for (let i = 0; i < samples.length; i += blockSize) {
+      const block = samples.slice(i, i + blockSize);
+      const avg = block.reduce((acc, v) => acc + Math.abs(v), 0) / block.length;
+      amplitudeData.push({ time: (i / sampleRate).toFixed(1), amplitude: avg });
+    }
+
+    // Salvar amplitude em arquivo txt
+    const ampFilename = `amplitude_${Date.now()}.txt`;
+    const ampPath = path.join(publicDir, ampFilename);
+    const ampContent = amplitudeData.map(d => `${d.time}\t${d.amplitude}`).join('\n');
+    fs.writeFileSync(ampPath, ampContent);
+
+    // Calcular DFT e obter frequência dominante e magnitude
+    const { freqDominante, maiorMag, magnitude, f1, df, totalf } = calculateDFT(samples, sampleRate);
+
+    // Salvar espectro em arquivo txt
+    const espectroFilename = `espectro_${Date.now()}.txt`;
+    const espectroPath = path.join(publicDir, espectroFilename);
+    let espectroContent = '';
+    for (let j = 0; j < totalf; j++) {
+      espectroContent += `${(f1 + j * df).toFixed(2)}\t${magnitude[j].toExponential(6)}\n`;
+    }
+    fs.writeFileSync(espectroPath, espectroContent);
+
+    // Salvar resultado (frequência dominante e magnitude)
+    const resultadoFilename = `resultado_${Date.now()}.txt`;
+    const resultadoPath = path.join(publicDir, resultadoFilename);
+    fs.writeFileSync(resultadoPath, `${freqDominante.toExponential(6)} ${maiorMag.toExponential(6)}`);
+
+    // Detectar nota musical
+    const dominantNote = frequencyToNote(freqDominante, maiorMag);
+
+    // Salvar nota detectada em arquivo txt
+    const notaFilename = `nota_${Date.now()}.txt`;
+    const notaPath = path.join(publicDir, notaFilename);
+    fs.writeFileSync(notaPath, dominantNote);
+
+    // Limpar arquivos temporários
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputWavPath);
+
+    // Responder JSON com dados e links para download
+    res.json({
+      samples: amplitudeData,
+      dominantFrequency: freqDominante,
+      dominantNote,
+      downloads: {
+        amplitude: `/${ampFilename}`,
+        espectro: `/${espectroFilename}`,
+        resultado: `/${resultadoFilename}`,
+        nota: `/${notaFilename}`
+      }
+    });
+  } catch (err) {
+    console.error('❌ Erro:', err);
+    res.status(500).json({ error: 'Erro no processamento do áudio' });
+  }
+});
+
+// Servir arquivos estáticos da pasta teste
 app.use(express.static('teste'));
 
-// Inicia o servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor ouvindo na porta ${PORT}`);
