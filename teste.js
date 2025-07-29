@@ -5,6 +5,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import fs from 'fs';
 import path from 'path';
+import wav from 'node-wav';
 
 const app = express();
 app.use(cors());
@@ -20,12 +21,17 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
   try {
     await convertToWav(inputPath, outputWavPath);
-    const wavBuffer = fs.readFileSync(outputWavPath);
-    const samples = extractSamplesFromWav(wavBuffer);
-    const sampleRate = 44100;
+    const buffer = fs.readFileSync(outputWavPath);
+    const result = wav.decode(buffer);
+    const channelData = result.channelData[0]; // Usar só o canal esquerdo (mono)
+    const sampleRate = result.sampleRate;
 
-    const windowSamples = sampleRate * 0.5; // 0.5s janela
-    const segment = samples.slice(0, windowSamples);
+    const windowSamples = Math.floor(sampleRate * 0.5); // Janela de 0.5s
+    if (channelData.length < windowSamples) {
+      throw new Error('Áudio muito curto para análise (menos de 0.5s)');
+    }
+
+    const segment = Array.from(channelData.slice(0, windowSamples));
 
     const freqResult = dftDominantFrequency(segment, sampleRate, 16, 1048, 2);
     const freq = freqResult.freq;
@@ -33,7 +39,6 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     const threshold = 2e-3;
     let note = 'PAUSA';
-
     if (amplitude > threshold && freq > 0) {
       note = frequencyToNote(freq);
     }
@@ -55,27 +60,24 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
   } catch (err) {
     console.error('❌ Erro:', err);
-    res.status(500).json({ error: 'Erro no processamento do áudio' });
+    res.status(500).json({
+      error: 'Erro no envio/análise.',
+      dominantNote: 'PAUSA',
+      dominantFrequency: 'Hz'
+    });
   }
 });
 
 function convertToWav(input, output) {
   return new Promise((resolve, reject) => {
     ffmpeg(input)
-      .toFormat('wav')
+      .audioChannels(1)
+      .audioFrequency(44100)
+      .format('wav')
       .on('end', resolve)
       .on('error', reject)
       .save(output);
   });
-}
-
-function extractSamplesFromWav(buffer) {
-  const samples = [];
-  for (let i = 44; i < buffer.length; i += 2) {
-    const sample = buffer.readInt16LE(i);
-    samples.push(sample / 32768);
-  }
-  return samples;
 }
 
 function dftDominantFrequency(samples, sampleRate, fStart, fEnd, df) {
