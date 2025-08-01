@@ -30,9 +30,8 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const lines = chunk.map((x, i) => `${i / sampleRate}\t${x}`);
     fs.writeFileSync(rawPath, lines.join('\n'));
 
-    // DFT manual com passo de 2Hz e interpolação parabólica
+    // DFT manual com passo de 2Hz
     const N = chunk.length;
-    const nyquist = sampleRate / 2;
     const minFreq = 16;
     const maxFreq = 1048;
     const step = 2;
@@ -57,31 +56,14 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       }
     }
 
-    ///imprimir os valores:
-    //a) maxMag
-    //b) peakIndex
-    //c) minFreq+(peakIndex)*step
+    // Imprimindo os valores solicitados
+    const freqPeak = minFreq + (peakIndex * step);
+    console.log(`maxMag = ${maxMag}`);
+    console.log(`peakIndex = ${peakIndex}`);
+    console.log(`frequência correspondente = ${freqPeak} Hz`);
 
-    ///comentar a partir daqui
-
-
-    let fInterpolated = mags[peakIndex]?.f || 0;
-
-    // Interpolação parabólica (se possível)
-    if (peakIndex > 0 && peakIndex < mags.length - 1) {
-      const y1 = mags[peakIndex - 1].mag;
-      const y2 = mags[peakIndex].mag;
-      const y3 = mags[peakIndex + 1].mag;
-      const denom = (y1 - 2 * y2 + y3);
-      if (denom !== 0) {
-        const delta = 0.5 * (y1 - y3) / denom;
-        fInterpolated = mags[peakIndex].f + delta * step;
-      }
-    }
-
-    // Escrevendo resultado
-    const amp = mags[peakIndex]?.mag || 0;
-    fs.writeFileSync('resultado_saida.txt', `${fInterpolated}\t${amp}`);
+    // Escrevendo resultado (sem interpolação)
+    fs.writeFileSync('resultado_saida.txt', `${freqPeak}\t${maxMag}`);
 
     // Executa o código C++ compilado que gera nota.txt
     execSync('./detecta_nota');
@@ -89,7 +71,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const nota = fs.readFileSync('nota.txt', 'utf-8').trim();
 
     res.json({
-      dominantFrequency: fInterpolated,
+      dominantFrequency: freqPeak,
       dominantNote: nota
     });
 
