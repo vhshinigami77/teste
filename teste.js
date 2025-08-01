@@ -54,8 +54,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     let maxMag = 0;
     let peakFreq = 0;
+    let peakIndex = -1;
 
-    for (let freq = minFreq; freq <= maxFreq; freq += freqStep) {
+    for (let i = 0, freq = minFreq; freq <= maxFreq; freq += freqStep, i++) {
       let real = 0;
       let imag = 0;
       for (let n = 0; n < N; n++) {
@@ -69,10 +70,21 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       if (magnitude > maxMag) {
         maxMag = magnitude;
         peakFreq = freq;
+        peakIndex = i;
       }
     }
 
+    const frequencyFromIndex = minFreq + peakIndex * freqStep;
     const note = frequencyToNote(peakFreq);
+
+    // === LOGS SOLICITADOS ===
+    console.log('============================');
+    console.log(`maxMag: ${maxMag.toFixed(2)}`);
+    console.log(`peakIndex: ${peakIndex}`);
+    console.log(`frequencyFromIndex: ${frequencyFromIndex.toFixed(2)} Hz`);
+    console.log(`dominantFrequency: ${peakFreq.toFixed(2)} Hz`);
+    console.log(`dominantNote: ${note}`);
+    console.log('============================');
 
     res.json({
       dominantFrequency: peakFreq,
