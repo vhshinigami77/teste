@@ -23,7 +23,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const samples = result.channelData[0];
 
     // Pegando os primeiros 1 segundo (janela de 44100 amostras)
-    const chunkSize = sampleRate * 1; 
+    const chunkSize = sampleRate * 1;
     const chunk = samples.slice(0, chunkSize);
 
     // Escrevendo as amostras no arquivo
@@ -56,6 +56,14 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
         peakIndex = mags.length - 1;
       }
     }
+
+    ///imprimir os valores:
+    //a) maxMag
+    //b) peakIndex
+    //c) minFreq+(peakIndex)*step
+
+    ///comentar a partir daqui
+
 
     let fInterpolated = mags[peakIndex]?.f || 0;
 
