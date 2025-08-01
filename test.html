@@ -13,7 +13,7 @@
   <p id="status">Clique em "Gravar" para iniciar.</p>
 
   <p>Nota detectada: <span id="nota"></span></p>
-  <p>Frequência dominante: <span id="freq"></span> Hz</p>
+  <p>Frequência dominante: <span id="freq">-</span> Hz</p>
 
   <script>
     let mediaRecorder;
@@ -53,8 +53,9 @@
             });
             const data = await response.json();
 
-            notaSpan.textContent = data.dominantNote || 'Não detectada';
-            freqSpan.textContent = data.dominantFrequency ? data.dominantFrequency.toFixed(2) : '-';
+            // Atualização aqui para refletir sua API atual
+            notaSpan.textContent = data.nota || 'Não detectada';
+            freqSpan.textContent = '-'; // Como a frequência não está retornando no JSON
 
             statusP.textContent = 'Análise concluída!';
           } catch (err) {
