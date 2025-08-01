@@ -12,7 +12,7 @@
 
   <p id="status">Clique em "Gravar" para iniciar.</p>
 
-  <p>Nota detectada: <span id="nota"></span></p>
+  <p>Nota detectada: <span id="nota">-</span></p>
   <p>Frequência dominante: <span id="freq">-</span> Hz</p>
 
   <script>
@@ -47,15 +47,14 @@
           formData.append('audio', blob, 'audio.webm');
 
           try {
-            const response = await fetch('https://tccvictor.onrender.com/upload', {
+            const response = await fetch('http://localhost:5000/upload', {
               method: 'POST',
               body: formData
             });
             const data = await response.json();
 
-            // Atualização aqui para refletir sua API atual
             notaSpan.textContent = data.nota || 'Não detectada';
-            freqSpan.textContent = '-'; // Como a frequência não está retornando no JSON
+            freqSpan.textContent = data.frequencia ? data.frequencia.toFixed(2) : '-';
 
             statusP.textContent = 'Análise concluída!';
           } catch (err) {
