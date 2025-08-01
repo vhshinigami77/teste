@@ -22,7 +22,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const sampleRate = result.sampleRate;
     const samples = result.channelData[0];
 
-    // Pegando os primeiros 1 segundo (janela de 44100 amostras)
+    // Pegando os primeiros 1 segundo (44100 amostras)
     const chunkSize = sampleRate * 1;
     const chunk = samples.slice(0, chunkSize);
 
@@ -56,13 +56,15 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       }
     }
 
-    // Imprimindo os valores solicitados
+    // Calculando frequência correspondente
     const freqPeak = minFreq + (peakIndex * step);
+
+    // Logs no terminal do servidor
     console.log(`maxMag = ${maxMag}`);
     console.log(`peakIndex = ${peakIndex}`);
     console.log(`frequência correspondente = ${freqPeak} Hz`);
 
-    // Escrevendo resultado (sem interpolação)
+    // Escrevendo resultado para uso pelo C++
     fs.writeFileSync('resultado_saida.txt', `${freqPeak}\t${maxMag}`);
 
     // Executa o código C++ compilado que gera nota.txt
@@ -70,16 +72,20 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     const nota = fs.readFileSync('nota.txt', 'utf-8').trim();
 
+    // Resposta JSON com todos os dados
     res.json({
       dominantFrequency: freqPeak,
-      dominantNote: nota
+      dominantNote: nota,
+      maxMag,
+      peakIndex,
+      frequencyFromIndex: freqPeak
     });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erro ao processar o áudio' });
   } finally {
-    // Limpeza de arquivos
+    // Limpeza dos arquivos temporários
     fs.unlinkSync(webmPath);
     if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath);
   }
