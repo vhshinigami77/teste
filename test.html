@@ -1,83 +1,79 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <title>Gravação e análise de áudio</title>
+  <meta charset="UTF-8">
+  <title>Gravador de Áudio</title>
 </head>
 <body>
-  <h1>Gravar e enviar áudio</h1>
-
-  <button id="startBtn">Gravar</button>
-  <button id="stopBtn" disabled>Parar</button>
-
-  <p id="status">Clique em "Gravar" para iniciar.</p>
-
-  <p>Nota detectada: <span id="nota">-</span></p>
-  <p>Frequência dominante: <span id="freq">-</span> Hz</p>
+  <h1>Gravador de Áudio</h1>
+  <button id="start">Gravar</button>
+  <button id="stop" disabled>Parar</button>
+  <p id="status"></p>
+  <pre id="resultado"></pre>
 
   <script>
     let mediaRecorder;
-    let chunks = [];
+    let audioChunks = [];
 
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const statusP = document.getElementById('status');
-    const notaSpan = document.getElementById('nota');
-    const freqSpan = document.getElementById('freq');
+    const startBtn = document.getElementById('start');
+    const stopBtn = document.getElementById('stop');
+    const status = document.getElementById('status');
+    const resultado = document.getElementById('resultado');
 
     startBtn.onclick = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
 
-        chunks = [];
-        mediaRecorder.start();
-        statusP.textContent = 'Gravando...';
+      mediaRecorder.ondataavailable = event => {
+        audioChunks.push(event.data);
+      };
 
-        mediaRecorder.ondataavailable = e => {
-          chunks.push(e.data);
-        };
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'gravacao.webm');
 
-        mediaRecorder.onstop = async () => {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
+        status.textContent = 'Enviando para o servidor...';
 
-          statusP.textContent = 'Enviando áudio para análise...';
+        try {
+          const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+          });
 
-          const formData = new FormData();
-          formData.append('audio', blob, 'audio.webm');
+          if (!response.ok) throw new Error('Erro na resposta do servidor');
 
-          try {
-            const response = await fetch('https://tccvictor-2.onrender.com/upload', {
-              method: 'POST',
-              body: formData
-            });
-            const data = await response.json();
+          const data = await response.json();
 
-            notaSpan.textContent = data.nota || 'Não detectada';
-            freqSpan.textContent = data.frequencia ? data.frequencia.toFixed(2) : '-';
+          // Exibir os dados recebidos no frontend
+          resultado.textContent = `
+Frequência dominante: ${data.dominantFrequency.toFixed(2)} Hz
+Nota detectada: ${data.dominantNote}
+----------------------------------------
+maxMag: ${data.maxMag.toFixed(2)}
+peakIndex: ${data.peakIndex}
+Frequência correspondente: ${data.frequencyFromIndex.toFixed(2)} Hz
+          `.trim();
 
-            statusP.textContent = 'Análise concluída!';
-          } catch (err) {
-            statusP.textContent = 'Erro no envio/análise.';
-            console.error(err);
-          }
-        };
+          status.textContent = 'Análise concluída!';
+        } catch (err) {
+          console.error(err);
+          status.textContent = 'Erro ao processar o áudio.';
+        }
+      };
 
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
-      } catch (err) {
-        alert('Erro ao acessar microfone.');
-        console.error(err);
-      }
+      mediaRecorder.start();
+      status.textContent = 'Gravando...';
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
     };
 
     stopBtn.onclick = () => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        statusP.textContent = 'Parando gravação...';
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-      }
+      mediaRecorder.stop();
+      status.textContent = 'Parando...';
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
     };
   </script>
 </body>
