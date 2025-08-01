@@ -2,10 +2,13 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import cors from 'cors';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const app = express();
+app.use(cors()); // <- Aqui habilita o CORS
+
 const upload = multer({ dest: 'uploads/' });
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,7 +21,7 @@ function frequencyToNote(freq) {
   const A4 = 440;
   const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const semitones = Math.round(12 * Math.log2(freq / A4));
-  const noteIndex = (semitones + 9 + 12 * 10) % 12; // +9 para alinhar com A=0
+  const noteIndex = (semitones + 9 + 12 * 10) % 12;
   const octave = 4 + Math.floor((semitones + 9) / 12);
   return `${NOTES[noteIndex]}${octave}`;
 }
@@ -30,10 +33,8 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const inputPath = req.file.path;
     const outputPath = `${inputPath}.wav`;
 
-    // Converte o áudio para WAV com 44.1kHz mono
     execSync(`ffmpeg -i ${inputPath} -ar 44100 -ac 1 ${outputPath}`);
 
-    // Lê os dados do arquivo WAV
     const buffer = fs.readFileSync(outputPath);
     const headerSize = 44;
     const sampleRate = 44100;
@@ -44,8 +45,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       int16Samples.push(sample);
     }
 
-    // Aplica DFT manual para obter o espectro entre 16 e 1048 Hz (passo 2Hz)
-    const windowSize = sampleRate; // 1s de janela
+    const windowSize = sampleRate;
     const N = Math.min(windowSize, int16Samples.length);
     const freqStep = 2;
     const minFreq = 16;
@@ -74,13 +74,11 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     const note = frequencyToNote(peakFreq);
 
-    // Envia resposta ao front-end
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note
     });
 
-    // Limpeza de arquivos
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
   } catch (err) {
