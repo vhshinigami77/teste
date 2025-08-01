@@ -7,7 +7,7 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const app = express();
-app.use(cors()); // Habilita o CORS
+app.use(cors()); // <- Aqui habilita o CORS
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -33,7 +33,6 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const inputPath = req.file.path;
     const outputPath = `${inputPath}.wav`;
 
-    // Converte para WAV mono, 44.1 kHz
     execSync(`ffmpeg -i ${inputPath} -ar 44100 -ac 1 ${outputPath}`);
 
     const buffer = fs.readFileSync(outputPath);
@@ -55,9 +54,8 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     let maxMag = 0;
     let peakFreq = 0;
-    let peakIndex = -1;
 
-    for (let i = 0, freq = minFreq; freq <= maxFreq; freq += freqStep, i++) {
+    for (let freq = minFreq; freq <= maxFreq; freq += freqStep) {
       let real = 0;
       let imag = 0;
       for (let n = 0; n < N; n++) {
@@ -71,26 +69,14 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       if (magnitude > maxMag) {
         maxMag = magnitude;
         peakFreq = freq;
-        peakIndex = i;
       }
     }
 
     const note = frequencyToNote(peakFreq);
 
-    // Log para depuração
-    console.log('--- Resultado da Análise ---');
-    console.log('Frequência dominante:', peakFreq, 'Hz');
-    console.log('Nota correspondente:', note);
-    console.log('Índice do pico (peakIndex):', peakIndex);
-    console.log('Magnitude máxima (maxMag):', maxMag);
-    console.log('Frequência via índice (frequencyFromIndex):', spectrum[peakIndex]?.freq || 'N/A');
-
     res.json({
       dominantFrequency: peakFreq,
-      dominantNote: note,
-      peakIndex,
-      maxMag,
-      frequencyFromIndex: spectrum[peakIndex]?.freq || null
+      dominantNote: note
     });
 
     fs.unlinkSync(inputPath);
