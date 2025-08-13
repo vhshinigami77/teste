@@ -2,25 +2,34 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Gravação e análise de áudio</title>
+  <title>Detecção Contínua de Notas</title>
 </head>
 <body>
-  <h1>Gravar e enviar áudio</h1>
+  <h1>Detecção contínua de notas</h1>
 
-  <button id="startBtn">Gravar</button>
-  <button id="stopBtn" disabled>Parar</button>
+  <!-- Botão para iniciar a gravação -->
+  <button id="startBtn">Iniciar</button>
+  <!-- Botão para parar o processo -->
+  <button id="stopBtn" disabled>Finalizar</button>
 
-  <p id="status">Clique em "Gravar" para iniciar.</p>
+  <!-- Texto de status -->
+  <p id="status">Clique em "Iniciar" para começar.</p>
 
+  <!-- Exibição da última nota detectada -->
   <p>Nota detectada: <span id="nota"></span></p>
+  <!-- Exibição da última frequência dominante detectada -->
   <p>Frequência dominante: <span id="freq"></span> Hz</p>
 
+  <!-- Área para detalhes técnicos -->
   <pre id="detalhes"></pre>
 
   <script>
+    // Variável para o gravador de áudio
     let mediaRecorder;
-    let chunks = [];
+    // Flag para saber se o loop está ativo
+    let isRunning = false;
 
+    // Referências para os elementos da página
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const statusP = document.getElementById('status');
@@ -28,67 +37,84 @@
     const freqSpan = document.getElementById('freq');
     const detalhes = document.getElementById('detalhes');
 
+    // Ao clicar em "Iniciar"
     startBtn.onclick = async () => {
       try {
+        // Solicita permissão para capturar áudio do microfone
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // Cria o gravador com o fluxo de áudio
         mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.start();
-        statusP.textContent = 'Gravando...';
 
-        chunks = [];
-        mediaRecorder.ondataavailable = e => {
-          chunks.push(e.data);
-        };
+        // Marca como ativo
+        isRunning = true;
+        // Desabilita o botão iniciar e habilita o parar
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        statusP.textContent = 'Gravando continuamente...';
 
-        mediaRecorder.onstop = async () => {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
-          chunks = [];
-          statusP.textContent = 'Enviando áudio para análise...';
-
-          const formData = new FormData();
-          formData.append('audio', blob, 'audio.webm');
-
-          try {
-            const response = await fetch('https://teste-fb8o.onrender.com/upload', {
-              method: 'POST',
-              body: formData
-            });
-            const data = await response.json();
-
-            // Atualiza campos principais
-            notaSpan.textContent = data.dominantNote || 'Não detectada';
-            freqSpan.textContent = data.dominantFrequency ? data.dominantFrequency.toFixed(2) : '-';
-
-            // Exibe detalhes técnicos
-            detalhes.textContent = `
-maxMag: ${data.maxMag?.toFixed(2) ?? '-'}
-peakIndex: ${data.peakIndex ?? '-'}
-Frequência correspondente (frequencyFromIndex): ${data.frequencyFromIndex?.toFixed(2) ?? '-'}
-            `.trim();
-
-            statusP.textContent = 'Análise concluída!';
-          } catch (err) {
-            statusP.textContent = 'Erro no envio/análise.';
-            console.error(err);
+        // Quando um pedaço de áudio estiver disponível
+        mediaRecorder.ondataavailable = async (e) => {
+          // Só processa se houver dados e o loop estiver ativo
+          if (e.data.size > 0 && isRunning) {
+            await enviarChunk(e.data); // Envia para análise
           }
         };
 
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
+        // Inicia a gravação com pedaços de 1 segundo (1000 ms)
+        mediaRecorder.start(1000);
       } catch (err) {
+        // Caso o usuário negue o acesso ao microfone ou ocorra erro
         alert('Erro ao acessar o microfone.');
         console.error(err);
       }
     };
 
+    // Ao clicar em "Finalizar"
     stopBtn.onclick = () => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
+      // Interrompe o loop
+      isRunning = false;
+      // Para a gravação se ainda estiver ativa
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
-        statusP.textContent = 'Parando gravação...';
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
       }
+      // Ajusta os botões e status
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      statusP.textContent = 'Processo finalizado.';
     };
+
+    // Função para enviar um pedaço de áudio (chunk) ao backend
+    async function enviarChunk(blob) {
+      // Prepara o formulário para envio
+      const formData = new FormData();
+      formData.append('audio', blob, 'chunk.webm');
+
+      try {
+        // Envia para o servidor
+        const response = await fetch('https://teste-fb8o.onrender.com/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        // Converte a resposta para JSON
+        const data = await response.json();
+
+        // Atualiza a tela com os resultados recebidos
+        notaSpan.textContent = data.dominantNote || 'Não detectada';
+        freqSpan.textContent = data.dominantFrequency ? data.dominantFrequency.toFixed(2) : '-';
+
+        // Mostra também os detalhes técnicos
+        detalhes.textContent = `
+dominantFrequency: ${data.dominantFrequency?.toFixed(2) ?? '-'} Hz
+dominantNote: ${data.dominantNote ?? '-'}
+        `.trim();
+
+      } catch (err) {
+        // Caso haja falha no envio ou processamento
+        console.error('Erro no envio/análise:', err);
+      }
+    }
   </script>
 </body>
 </html>
