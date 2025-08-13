@@ -2,10 +2,10 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Gravação contínua e análise de áudio</title>
+  <title>Gravação contínua com pausa entre análises</title>
 </head>
 <body>
-  <h1>Gravação contínua e análise de áudio</h1>
+  <h1>Gravação contínua com pausa entre análises</h1>
 
   <button id="startBtn">Iniciar</button>
   <button id="stopBtn" disabled>Parar</button>
@@ -16,13 +16,19 @@
   <script>
     let mediaRecorder;
     let isRecording = false;
+    let stream;
 
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const statusSpan = document.getElementById('status');
     const notaSpan = document.getElementById('nota');
 
-    // Envia o áudio para o backend e atualiza a nota
+    // Função auxiliar para aguardar ms milissegundos
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Envia o áudio e atualiza nota
     async function enviarAudio(blob) {
       statusSpan.textContent = 'Enviando áudio para análise...';
 
@@ -44,45 +50,54 @@
       }
     }
 
-    async function iniciarGravacao() {
+    async function gravarEProcessar() {
+      while (isRecording) {
+        // Começa a gravação e espera 1 segundo de dados
+        mediaRecorder.start();
+
+        // Espera o evento ondataavailable com 1 segundo de áudio
+        const audioBlob = await new Promise(resolve => {
+          mediaRecorder.ondataavailable = e => {
+            resolve(e.data);
+          };
+          // Parar gravação para disparar ondataavailable
+          setTimeout(() => mediaRecorder.stop(), 1000);
+        });
+
+        await enviarAudio(audioBlob);
+
+        // Espera 1 segundo antes do próximo ciclo
+        await delay(1000);
+      }
+    }
+
+    startBtn.onclick = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
 
-        mediaRecorder.ondataavailable = async (event) => {
-          if (event.data && event.data.size > 0) {
-            await enviarAudio(event.data);
-            if (isRecording) {
-              mediaRecorder.start(1000);
-            }
-          }
-        };
-
         isRecording = true;
-        statusSpan.textContent = 'Gravando...';
-        notaSpan.textContent = '-';
         startBtn.disabled = true;
         stopBtn.disabled = false;
+        statusSpan.textContent = 'Gravando...';
+        notaSpan.textContent = '-';
 
-        mediaRecorder.start(1000);
+        gravarEProcessar();
       } catch (err) {
         alert('Erro ao acessar o microfone.');
         console.error(err);
       }
-    }
+    };
 
-    function pararGravacao() {
-      if (mediaRecorder && isRecording) {
-        isRecording = false;
-        mediaRecorder.stop();
-        statusSpan.textContent = 'Gravação parada.';
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-      }
-    }
+    stopBtn.onclick = () => {
+      isRecording = false;
+      mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop();
+      stream && stream.getTracks().forEach(track => track.stop());
 
-    startBtn.onclick = iniciarGravacao;
-    stopBtn.onclick = pararGravacao;
+      statusSpan.textContent = 'Gravação parada.';
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    };
   </script>
 </body>
 </html>
