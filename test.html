@@ -7,96 +7,116 @@
 <body>
   <h1>Gravação contínua com pausa entre análises</h1>
 
+  <!-- Botão para iniciar a gravação e análise -->
   <button id="startBtn">Iniciar</button>
+  <!-- Botão para parar a gravação -->
   <button id="stopBtn" disabled>Parar</button>
 
+  <!-- Exibe o status atual do sistema -->
   <p>Status: <span id="status">Pronto para gravar</span></p>
+  <!-- Exibe a nota detectada no momento -->
   <p>Nota atual: <span id="nota">-</span></p>
 
   <script>
-    let mediaRecorder;
-    let isRecording = false;
-    let stream;
+    let mediaRecorder;     // Objeto para controlar a gravação de áudio
+    let isRecording = false;  // Flag para controlar o estado de gravação
+    let stream;            // Armazena o fluxo de áudio do microfone
 
+    // Referências aos elementos HTML para controle e exibição
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const statusSpan = document.getElementById('status');
     const notaSpan = document.getElementById('nota');
 
-    // Função auxiliar para aguardar ms milissegundos
+    // Função auxiliar que retorna uma Promise para aguardar um tempo em ms
     function delay(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    // Envia o áudio e atualiza nota
+    // Função que envia o áudio gravado para o backend para análise da nota
     async function enviarAudio(blob) {
       statusSpan.textContent = 'Enviando áudio para análise...';
 
+      // Prepara o FormData para envio via fetch (multipart/form-data)
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
 
       try {
+        // Envia o áudio para o endpoint do backend
         const response = await fetch('https://teste-fb8o.onrender.com/upload', {
           method: 'POST',
           body: formData
         });
         const data = await response.json();
 
+        // Atualiza a nota exibida com a resposta do backend
         notaSpan.textContent = data.dominantNote || 'Não detectada';
         statusSpan.textContent = 'Análise concluída!';
       } catch (err) {
+        // Caso ocorra algum erro no envio ou análise
         statusSpan.textContent = 'Erro na análise.';
         console.error(err);
       }
     }
 
+    // Função principal que grava áudio em blocos de 1 segundo, envia para análise,
+    // exibe a nota detectada, espera 1 segundo, e repete enquanto estiver gravando
     async function gravarEProcessar() {
       while (isRecording) {
-        // Começa a gravação e espera 1 segundo de dados
+        // Inicia a gravação do áudio
         mediaRecorder.start();
 
-        // Espera o evento ondataavailable com 1 segundo de áudio
+        // Aguarda o evento ondataavailable que entrega o áudio gravado (1 segundo)
         const audioBlob = await new Promise(resolve => {
           mediaRecorder.ondataavailable = e => {
             resolve(e.data);
           };
-          // Parar gravação para disparar ondataavailable
+          // Para a gravação após 1 segundo para disparar ondataavailable
           setTimeout(() => mediaRecorder.stop(), 1000);
         });
 
+        // Envia o áudio para o backend e atualiza a nota na tela
         await enviarAudio(audioBlob);
 
-        // Espera 1 segundo antes do próximo ciclo
+        // Espera 1 segundo antes de reiniciar a gravação para o próximo bloco
         await delay(1000);
       }
     }
 
+    // Evento disparado ao clicar no botão "Iniciar"
     startBtn.onclick = async () => {
       try {
+        // Solicita permissão e captura o áudio do microfone
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Cria o MediaRecorder com o fluxo de áudio
         mediaRecorder = new MediaRecorder(stream);
 
-        isRecording = true;
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
+        isRecording = true;         // Sinaliza que começou a gravar
+        startBtn.disabled = true;   // Desabilita o botão iniciar para evitar múltiplos cliques
+        stopBtn.disabled = false;   // Habilita o botão parar
         statusSpan.textContent = 'Gravando...';
-        notaSpan.textContent = '-';
+        notaSpan.textContent = '-'; // Reseta a nota exibida
 
+        // Inicia o ciclo de gravação e análise contínua
         gravarEProcessar();
       } catch (err) {
+        // Se o acesso ao microfone falhar, alerta o usuário
         alert('Erro ao acessar o microfone.');
         console.error(err);
       }
     };
 
+    // Evento disparado ao clicar no botão "Parar"
     stopBtn.onclick = () => {
-      isRecording = false;
+      isRecording = false; // Para o ciclo da gravação e análise
+      // Para a gravação caso esteja ativa
       mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop();
+      // Para todos os dispositivos de áudio para liberar microfone
       stream && stream.getTracks().forEach(track => track.stop());
 
       statusSpan.textContent = 'Gravação parada.';
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
+      startBtn.disabled = false;  // Habilita novamente o botão iniciar
+      stopBtn.disabled = true;    // Desabilita o botão parar
     };
   </script>
 </body>
