@@ -24,10 +24,9 @@
   <pre id="detalhes"></pre>
 
   <script>
-    // Variável para o gravador de áudio
-    let mediaRecorder;
-    // Flag para saber se o loop está ativo
-    let isRunning = false;
+    let mediaRecorder;   // objeto que grava o áudio
+    let isRunning = false; // flag para saber se o loop está ativo
+    let intervalId = null; // guarda o ID do setInterval
 
     // Referências para os elementos da página
     const startBtn = document.getElementById('startBtn');
@@ -48,23 +47,28 @@
 
         // Marca como ativo
         isRunning = true;
-        // Desabilita o botão iniciar e habilita o parar
         startBtn.disabled = true;
         stopBtn.disabled = false;
         statusP.textContent = 'Gravando continuamente...';
 
-        // Quando um pedaço de áudio estiver disponível
+        // Evento disparado quando um pedaço de áudio é solicitado
         mediaRecorder.ondataavailable = async (e) => {
-          // Só processa se houver dados e o loop estiver ativo
           if (e.data.size > 0 && isRunning) {
-            await enviarChunk(e.data); // Envia para análise
+            await enviarChunk(e.data);
           }
         };
 
-        // Inicia a gravação com pedaços de 1 segundo (1000 ms)
-        mediaRecorder.start(3000);
+        // Inicia gravação contínua
+        mediaRecorder.start();
+
+        // A cada 1 segundo, pede explicitamente um pedaço do áudio atual
+        intervalId = setInterval(() => {
+          if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.requestData();
+          }
+        }, 1700);
+
       } catch (err) {
-        // Caso o usuário negue o acesso ao microfone ou ocorra erro
         alert('Erro ao acessar o microfone.');
         console.error(err);
       }
@@ -72,13 +76,11 @@
 
     // Ao clicar em "Finalizar"
     stopBtn.onclick = () => {
-      // Interrompe o loop
       isRunning = false;
-      // Para a gravação se ainda estiver ativa
+      clearInterval(intervalId); // para o loop de requisição de chunks
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+        mediaRecorder.stop(); // encerra a gravação
       }
-      // Ajusta os botões e status
       startBtn.disabled = false;
       stopBtn.disabled = true;
       statusP.textContent = 'Processo finalizado.';
@@ -86,18 +88,14 @@
 
     // Função para enviar um pedaço de áudio (chunk) ao backend
     async function enviarChunk(blob) {
-      // Prepara o formulário para envio
       const formData = new FormData();
       formData.append('audio', blob, 'chunk.webm');
 
       try {
-        // Envia para o servidor
         const response = await fetch('https://teste-fb8o.onrender.com/upload', {
           method: 'POST',
           body: formData
         });
-
-        // Converte a resposta para JSON
         const data = await response.json();
 
         // Atualiza a tela com os resultados recebidos
@@ -111,7 +109,6 @@ dominantNote: ${data.dominantNote ?? '-'}
         `.trim();
 
       } catch (err) {
-        // Caso haja falha no envio ou processamento
         console.error('Erro no envio/análise:', err);
       }
     }
