@@ -2,92 +2,94 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Visual Hearing</title>
-<style>
-  body {
-    background: #111;
-    color: #fff;
-    font-family: Arial, sans-serif;
-    text-align: center;
-    padding: 20px;
-  }
+  <title>Detector de Notas</title>
+  <style>
+    body {
+      background: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
 
-  /* Container do teclado */
-  .keyboard {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 30px auto;
-    max-width: 900px;
-  }
+    /* Container do teclado */
+    .keyboard {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 30px auto;
+      max-width: 900px;
+    }
 
-  /* Estilo de cada tecla */
-  .key {
-    width: 60px;
-    height: 80px;
-    border-radius: 8px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
-    font-size: 16px;
-    opacity: 0.2; /* transparente por padrão */
-    transition: all 0.3s ease;
-  }
+    /* Estilo de cada tecla */
+    .key {
+      width: 70px;
+      height: 80px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: bold;
+      font-size: 14px;
+      opacity: 0.2; /* transparente por padrão */
+      transition: all 0.3s ease;
+      text-align: center;
+    }
 
-  /* Quando ativa (nota tocada) */
-  .active {
-    opacity: 1;
-    box-shadow: 0 0 20px #fff;
-    transform: scale(1.1);
-  }
+    /* Quando ativa (nota tocada) */
+    .active {
+      opacity: 1;
+      box-shadow: 0 0 20px #fff;
+      transform: scale(1.1);
+    }
 
-  /* Cores para cada nota */
-  .C { background: #4fc3f7; }
-  .Csharp { background: #26a69a; }
-  .D { background: #66bb6a; }
-  .Dsharp { background: #8bc34a; }
-  .E { background: #dce775; color: #000; }
-  .F { background: #ffb74d; }
-  .Fsharp { background: #ff8a65; }
-  .G { background: #ef5350; }
-  .Gsharp { background: #ba68c8; }
-  .A { background: #9575cd; }
-  .Asharp { background: #7986cb; }
-  .B { background: #64b5f6; }
+    /* Cores para cada nota */
+    .C { background: #4fc3f7; }
+    .Csharp { background: #26a69a; }
+    .D { background: #66bb6a; }
+    .Dsharp { background: #8bc34a; }
+    .E { background: #dce775; color: #000; }
+    .F { background: #ffb74d; }
+    .Fsharp { background: #ff8a65; }
+    .G { background: #ef5350; }
+    .Gsharp { background: #ba68c8; }
+    .A { background: #9575cd; }
+    .Asharp { background: #7986cb; }
+    .B { background: #64b5f6; }
 
-  /* Área da nota central */
-  .note-display {
-    margin-top: 20px;
-    font-size: 28px;
-    font-weight: bold;
-    padding: 10px 20px;
-    border-radius: 10px;
-    background: #222;
-    display: inline-block;
-    box-shadow: 0 0 10px #000;
-  }
+    /* Área da nota central */
+    .note-display {
+      margin-top: 20px;
+      font-size: 28px;
+      font-weight: bold;
+      padding: 10px 20px;
+      border-radius: 10px;
+      background: #222;
+      display: inline-block;
+      box-shadow: 0 0 10px #000;
+      transition: background 0.3s ease;
+    }
 
-  /* Botões com transparência */
-  button {
-    margin: 5px;
-    padding: 10px 20px;
-    font-size: 16px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    opacity: 0.3; /* transparente por padrão */
-    transition: opacity 0.3s ease;
-  }
+    /* Botões com transparência */
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      opacity: 0.3; /* transparente por padrão */
+      transition: opacity 0.3s ease;
+    }
 
-  button:enabled {
-    opacity: 1; /* só fica opaco quando está ativo */
-  }
+    button:enabled {
+      opacity: 1; /* só fica opaco quando está ativo */
+    }
 
-  #startBtn { background: #4caf50; color: white; }
-  #stopBtn { background: #f44336; color: white; }
-</style>
+    #startBtn { background: #4caf50; color: white; }
+    #stopBtn { background: #f44336; color: white; }
+  </style>
 </head>
 <body>
 
@@ -107,7 +109,7 @@
     <div class="key G">G</div>
     <div class="key Gsharp">G# / Ab</div>
     <div class="key A">A</div>
-    <div class="key Asharp">A#</div>
+    <div class="key Asharp">A# / Bb</div>
     <div class="key B">B</div>
   </div>
 
@@ -133,23 +135,36 @@
 
       const noteMap = {
         "C": "C",
-        "C#": "Csharp",
+        "C#": "Csharp", "Db": "Csharp",
         "D": "D",
-        "D#": "Dsharp",
+        "D#": "Dsharp", "Eb": "Dsharp",
         "E": "E",
         "F": "F",
-        "F#": "Fsharp",
+        "F#": "Fsharp", "Gb": "Fsharp",
         "G": "G",
-        "G#": "Gsharp",
+        "G#": "Gsharp", "Ab": "Gsharp",
         "A": "A",
-        "A#": "Asharp",
+        "A#": "Asharp", "Bb": "Asharp",
         "B": "B"
       };
 
-      if (note && noteMap[note.replace(/[0-9]/g, '')]) {
-        const cssClass = noteMap[note.replace(/[0-9]/g, '')];
+      const baseNote = note ? note.replace(/[0-9]/g, '') : null;
+
+      if (baseNote && noteMap[baseNote]) {
+        const cssClass = noteMap[baseNote];
         const keyEl = document.querySelector('.' + cssClass);
-        if (keyEl) keyEl.classList.add('active');
+
+        if (keyEl) {
+          keyEl.classList.add('active');
+
+          // pega a cor de fundo da tecla
+          const keyColor = window.getComputedStyle(keyEl).backgroundColor;
+          const textColor = window.getComputedStyle(keyEl).color;
+
+          // aplica no bloco central
+          noteDisplay.style.background = keyColor;
+          noteDisplay.style.color = textColor;
+        }
       }
 
       noteDisplay.textContent = note !== "PAUSA" 
@@ -171,6 +186,8 @@
       } catch (err) {
         console.error(err);
         noteDisplay.textContent = "Erro na análise";
+        noteDisplay.style.background = "#222";
+        noteDisplay.style.color = "#fff";
       }
     }
 
@@ -197,6 +214,8 @@
         startBtn.disabled = true;
         stopBtn.disabled = false;
         noteDisplay.textContent = "Gravando...";
+        noteDisplay.style.background = "#222";
+        noteDisplay.style.color = "#fff";
 
         gravarEProcessar();
       } catch (err) {
@@ -212,7 +231,11 @@
 
       startBtn.disabled = false;
       stopBtn.disabled = true;
+
+      // reset bloco central e teclas
       noteDisplay.textContent = "Gravação parada";
+      noteDisplay.style.background = "#222";
+      noteDisplay.style.color = "#fff";
       keys.forEach(k => k.classList.remove('active'));
     };
   </script>
