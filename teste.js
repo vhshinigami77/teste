@@ -26,7 +26,6 @@ function frequencyToNoteCStyle(freq) {
 
   const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-  // Número de semitons relativo a A4
   const n = 12 * Math.log2(freq / 440);
   const q = Math.floor(Math.round(n + 9) / 12);
   const r = Math.round(n + 9) % 12;
@@ -62,13 +61,12 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // ========================
     // Parâmetros do DFT manual
     // ========================
-    const windowSize = sampleRate; // Janela de 1 segundo
+    const windowSize = sampleRate;
     const N = Math.min(windowSize, int16Samples.length);
     const freqStep = 2;
     const minFreq = 16;
     const maxFreq = 1048;
 
-    const spectrum = [];
     let maxMag = 0;
     let peakFreq = 0;
     let peakIndex = -1;
@@ -84,7 +82,6 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       }
 
       const magnitude = Math.sqrt(real * real + imag * imag);
-      spectrum.push({ freq, magnitude });
 
       if (magnitude > maxMag) {
         maxMag = magnitude;
@@ -97,11 +94,10 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // Limiar e conversão para nota
     // ==================
     const limiar = 2e-3;
-
     let note;
-    if (maxMag < limiar) {
-      console.log('PAUSA...');
+    if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
       note = 'PAUSA';
+      peakFreq = 0; // Frequência 0 quando é pausa
     } else {
       note = frequencyToNoteCStyle(peakFreq);
     }
