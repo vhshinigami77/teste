@@ -144,10 +144,14 @@
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    // ======================
+    // Função robusta de destaque
+    // ======================
     function highlightNote(note, freq) {
       keys.forEach(k => k.classList.remove('active'));
 
-      if (!note || note === "PAUSA") {
+      // Qualquer valor inválido ou PAUSA é tratado como PAUSA
+      if (!note || typeof note !== 'string' || note.trim() === "" || note === "PAUSA") {
         noteDisplay.textContent = "PAUSA";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
