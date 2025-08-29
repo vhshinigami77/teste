@@ -12,7 +12,6 @@
       padding: 20px;
     }
 
-    /* Container principal dos teclados */
     .keyboards {
       display: flex;
       flex-direction: column;
@@ -21,7 +20,6 @@
       max-width: 1000px;
     }
 
-    /* Cada oitava */
     .keyboard {
       display: flex;
       justify-content: center;
@@ -29,7 +27,6 @@
       gap: 4px;
     }
 
-    /* Estilo de cada tecla */
     .key {
       width: 55px;
       height: 70px;
@@ -50,7 +47,6 @@
       transform: scale(1.1);
     }
 
-    /* Cores para cada nota */
     .C { background: #4fc3f7; }
     .Csharp { background: #26a69a; }
     .D { background: #66bb6a; }
@@ -64,7 +60,6 @@
     .Asharp { background: #7986cb; }
     .B { background: #64b5f6; }
 
-    /* Área da nota central */
     .note-display {
       margin-top: 20px;
       font-size: 28px;
@@ -77,7 +72,6 @@
       transition: background 0.3s ease;
     }
 
-    /* Botões */
     button {
       margin: 5px;
       padding: 10px 20px;
@@ -102,7 +96,6 @@
   <button id="startBtn">Iniciar</button>
   <button id="stopBtn" disabled>Parar</button>
 
-  <!-- Dois teclados: oitava 4 e oitava 5 -->
   <div class="keyboards">
     <div class="keyboard" id="octave4">
       <div class="key C" data-note="C4">C4</div>
@@ -154,22 +147,18 @@
     function highlightNote(note, freq) {
       keys.forEach(k => k.classList.remove('active'));
 
-      if (note && note !== "PAUSA") {
+      if (!note || note === "PAUSA") {
+        noteDisplay.textContent = "PAUSA";
+        noteDisplay.style.background = "#222";
+        noteDisplay.style.color = "#fff";
+      } else {
         const keyEl = document.querySelector(`.key[data-note="${note}"]`);
         if (keyEl) {
           keyEl.classList.add('active');
-
-          const keyColor = window.getComputedStyle(keyEl).backgroundColor;
-          const textColor = window.getComputedStyle(keyEl).color;
-
-          noteDisplay.style.background = keyColor;
-          noteDisplay.style.color = textColor;
+          noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
+          noteDisplay.style.color = window.getComputedStyle(keyEl).color;
         }
         noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz`;
-      } else {
-        noteDisplay.textContent = "Pausa";
-        noteDisplay.style.background = "#222";
-        noteDisplay.style.color = "#fff";
       }
     }
 
