@@ -150,8 +150,8 @@
     function highlightNote(note, freq) {
       keys.forEach(k => k.classList.remove('active'));
 
-      // Qualquer valor inválido ou PAUSA é tratado como PAUSA
-      if (!note || typeof note !== 'string' || note.trim() === "" || note === "PAUSA") {
+      // Qualquer valor inválido ou que não corresponda a nota musical válida é tratado como PAUSA
+      if (!note || typeof note !== 'string' || !note.match(/^[A-G]#?\d$/) || note === "PAUSA") {
         noteDisplay.textContent = "PAUSA";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
