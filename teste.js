@@ -5,18 +5,24 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
-import cors from "cors";
+import cors from "cors"; // ES Module import
 
+// ==========================
+// Configurações iniciais
+// ==========================
 const app = express();
 app.use(express.json());
 app.use(express.static("public"));
 app.use(cors());
 
 const upload = multer({ dest: "uploads/" });
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Converte frequência em nota musical
+// ==========================
+// Função: Converter frequência em nota musical
+// ==========================
 function frequencyToNoteCStyle(freq) {
   if (!freq || freq <= 0 || isNaN(freq)) return "PAUSA";
   const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
@@ -26,11 +32,11 @@ function frequencyToNoteCStyle(freq) {
   return `${NOTES[r]}${4 + q}`;
 }
 
-// Upload e análise de áudio
+// ==========================
+// Rota: Upload e análise de áudio
+// ==========================
 app.post("/upload", upload.single("audio"), async (req, res) => {
   try {
-    if(!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado." });
-
     const inputPath = req.file.path;
     const outputPath = `${inputPath}.wav`;
 
@@ -45,7 +51,9 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
       int16Samples.push(buffer.readInt16LE(i));
     }
 
+    // ==========================
     // DFT manual
+    // ==========================
     const windowSize = sampleRate;
     const N = Math.min(windowSize, int16Samples.length);
     const freqStep = 2;
@@ -70,27 +78,32 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
     }
 
     // ==========================
-    // Magnitude em escala logarítmica (dB)
+    // Níveis de magnitude
     // ==========================
-    const epsilon = 1e-6; // evita log(0)
-    const maxPossibleMag = 32768 * N; // valor máximo teórico
-    const magDb = 20 * Math.log10(maxMag / maxPossibleMag + epsilon);
-
-    // Define níveis de brilho
+    const lowThreshold = maxMag * 0.3;
+    const midThreshold = maxMag * 0.6;
     let magnitudeLevel = "low";
-    if (magDb > -6) magnitudeLevel = "high";       // muito alto
-    else if (magDb > -20) magnitudeLevel = "medium"; // médio
-    else magnitudeLevel = "low";                   // baixo
+    if (maxMag > midThreshold) magnitudeLevel = "high";
+    else if (maxMag > lowThreshold) magnitudeLevel = "medium";
 
+    // ==========================
+    // Nota dominante
+    // ==========================
     const note = peakFreq ? frequencyToNoteCStyle(peakFreq) : "PAUSA";
 
+    // ==========================
+    // Envia resultado
+    // ==========================
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: magDb,
+      magnitude: maxMag,
       level: magnitudeLevel
     });
 
+    // ==========================
+    // Limpeza de arquivos temporários
+    // ==========================
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
 
@@ -100,6 +113,8 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
   }
 });
 
+// ==========================
 // Inicializa servidor
+// ==========================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
