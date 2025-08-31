@@ -33,6 +33,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const inputPath = req.file.path;
     const outputPath = `${inputPath}.wav`;
 
+    // Converte para WAV, mono, 44.1 kHz
     execSync(`ffmpeg -i ${inputPath} -ar 44100 -ac 1 ${outputPath}`);
 
     const buffer = fs.readFileSync(outputPath);
@@ -46,7 +47,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // ========================
     // DFT manual
     // ========================
-    const windowSize = sampleRate;
+    const windowSize = sampleRate; // 1 segundo
     const N = Math.min(windowSize, int16Samples.length);
     const freqStep = 2;
     const minFreq = 16;
@@ -74,29 +75,34 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // ==================
     const limiar = 2e-3;
     let note;
-    let normalizedMagnitude = maxMag / 32768; // int16 máximo
     if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
       note = 'PAUSA';
       peakFreq = 0;
-      normalizedMagnitude = 0;
+      maxMag = 0;
     } else {
       note = frequencyToNoteCStyle(peakFreq);
     }
 
+    // ==================
+    // Magnitude normalizada 0..1
+    // ==================
+    const normalizedMagnitude = maxMag / (32768 * N);
+
     // LOG
     console.log('============================');
-    console.log(`maxMag: ${maxMag.toFixed(2)}`);
     console.log(`dominantFrequency: ${peakFreq.toFixed(2)} Hz`);
     console.log(`dominantNote: ${note}`);
     console.log(`normalizedMagnitude: ${normalizedMagnitude.toFixed(2)}`);
     console.log('============================');
 
+    // Envia resposta JSON
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
       magnitude: normalizedMagnitude
     });
 
+    // Remove arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
 
