@@ -84,9 +84,10 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     // ==================
-    // Magnitude normalizada 0..1
+    // Normalização baseada no pico real do áudio
     // ==================
-    const normalizedMagnitude = maxMag / (32768 * N);
+    const peakSample = Math.max(...int16Samples.slice(0, N).map(s => Math.abs(s))) || 1; // evita divisão por 0
+    const normalizedMagnitude = maxMag / (peakSample * N);
 
     // LOG
     console.log('============================');
