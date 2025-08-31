@@ -54,6 +54,20 @@
   }
   .active { opacity: 1; box-shadow: 0 0 20px #fff; transform: scale(1.1); }
 
+  /* Cores das teclas */
+  .C { background: #4fc3f7; }
+  .Csharp { background: #26a69a; }
+  .D { background: #66bb6a; }
+  .Dsharp { background: #8bc34a; }
+  .E { background: #dce775; color: #000; }
+  .F { background: #ffb74d; }
+  .Fsharp { background: #ff8a65; }
+  .G { background: #ef5350; }
+  .Gsharp { background: #ba68c8; }
+  .A { background: #9575cd; }
+  .Asharp { background: #7986cb; }
+  .B { background: #64b5f6; }
+
   .note-display {
     margin-top: 20px;
     font-size: 28px;
@@ -83,7 +97,7 @@
 </div>
 
 <div class="note-display" id="noteDisplay">Nenhuma nota</div>
-<div id="magnitudeDisplay">Magnitude: -</div>
+<div id="magnitudeDisplay">Magnitude (dB): -</div>
 
 <script>
 const keys = {};
@@ -104,40 +118,38 @@ octaves.forEach(oct => {
     key.dataset.note = note + oct;
     key.textContent = note + oct;
     container.appendChild(key);
-    keys[note + oct] = key;
+    keys[note+oct] = key;
   });
 });
 
 // ======== Estado de gravação ========
 let mediaRecorder, stream, isRecording = false;
-function delay(ms){ return new Promise(r => setTimeout(r, ms)); }
-function resetKeys(){ Object.values(keys).forEach(k => k.classList.remove("active")); }
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function resetKeys(){ Object.values(keys).forEach(k=>k.classList.remove("active")); }
 
 // ======== Atualiza teclado e display ========
-function highlightNote(note, magnitude, level){
+function highlightNote(note, magnitudeDb, level){
   resetKeys();
-
-  if(!note || note === "PAUSA"){
+  if(!note || note==="PAUSA"){
     noteDisplay.textContent = "PAUSA";
-    noteDisplay.style.background = "#222";
+    noteDisplay.style.background="#222";
   } else {
     const keyEl = keys[note];
     if(keyEl) keyEl.classList.add("active");
     noteDisplay.textContent = note;
   }
+  magnitudeDisplay.textContent = "Magnitude (dB): " + magnitudeDb.toFixed(1);
 
-  magnitudeDisplay.textContent = "Magnitude: " + Math.round(magnitude*100)/100;
-
-  // Ajuste de cores de acordo com nível
-  if(level === "low") {
-    noteDisplay.style.background = "#333";
-    magnitudeDisplay.style.color = "#aaa";
-  } else if(level === "medium") {
-    noteDisplay.style.background = "#555";
-    magnitudeDisplay.style.color = "#ffa500";
+  // Cor do display conforme nível
+  if(level==="low"){
+    noteDisplay.style.background="#333";
+    magnitudeDisplay.style.color="#aaa";
+  } else if(level==="medium"){
+    noteDisplay.style.background="#555";
+    magnitudeDisplay.style.color="#ffa500";
   } else {
-    noteDisplay.style.background = "#f00";
-    magnitudeDisplay.style.color = "#f00";
+    noteDisplay.style.background="#f00";
+    magnitudeDisplay.style.color="#f00";
   }
 }
 
@@ -145,16 +157,15 @@ function highlightNote(note, magnitude, level){
 async function enviarAudio(blob){
   const formData = new FormData();
   formData.append("audio", blob, "audio.webm");
-
   try {
     const res = await fetch("https://teste-fb8o.onrender.com/upload", { method:"POST", body: formData });
     const data = await res.json();
     highlightNote(data.dominantNote, data.magnitude, data.level);
   } catch(err){
     console.error(err);
-    noteDisplay.textContent = "Erro";
-    noteDisplay.style.background = "#222";
-    magnitudeDisplay.textContent = "-";
+    noteDisplay.textContent="Erro";
+    noteDisplay.style.background="#222";
+    magnitudeDisplay.textContent="-";
   }
 }
 
@@ -162,9 +173,9 @@ async function enviarAudio(blob){
 async function gravarEProcessar(){
   while(isRecording){
     mediaRecorder.start();
-    const audioBlob = await new Promise(resolve => {
+    const audioBlob = await new Promise(resolve=>{
       mediaRecorder.ondataavailable = e => resolve(e.data);
-      setTimeout(() => mediaRecorder.stop(), 1000);
+      setTimeout(()=>mediaRecorder.stop(),1000);
     });
     await enviarAudio(audioBlob);
     await delay(1000);
@@ -172,18 +183,16 @@ async function gravarEProcessar(){
 }
 
 // ======== Botões ========
-startBtn.onclick = async () => {
+startBtn.onclick = async ()=>{
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});
     mediaRecorder = new MediaRecorder(stream);
     isRecording = true;
-
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    noteDisplay.textContent = "Gravando...";
-    noteDisplay.style.background = "#222";
-    magnitudeDisplay.textContent = "-";
-
+    noteDisplay.textContent="Gravando...";
+    noteDisplay.style.background="#222";
+    magnitudeDisplay.textContent="-";
     gravarEProcessar();
   } catch(err){
     alert("Erro ao acessar microfone");
@@ -191,16 +200,15 @@ startBtn.onclick = async () => {
   }
 };
 
-stopBtn.onclick = () => {
-  isRecording = false;
-  if(mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
-  if(stream) stream.getTracks().forEach(t => t.stop());
-
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  noteDisplay.textContent = "Gravação parada";
-  noteDisplay.style.background = "#222";
-  magnitudeDisplay.textContent = "-";
+stopBtn.onclick = ()=>{
+  isRecording=false;
+  if(mediaRecorder && mediaRecorder.state!=="inactive") mediaRecorder.stop();
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  startBtn.disabled=false;
+  stopBtn.disabled=true;
+  noteDisplay.textContent="Gravação parada";
+  noteDisplay.style.background="#222";
+  magnitudeDisplay.textContent="-";
   resetKeys();
 };
 </script>
