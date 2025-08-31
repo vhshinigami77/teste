@@ -2,21 +2,91 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Detector de Notas</title>
+  <title>Detector de Notas </title>
   <style>
-    body { background: #111; color: #fff; font-family: Arial,sans-serif; text-align: center; padding: 20px; }
-    .keyboards { display: flex; flex-direction: column; gap: 20px; margin: 30px auto; max-width: 1000px; }
-    .keyboard { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; }
-    .key { width: 55px; height: 70px; border-radius: 6px; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 13px; opacity: 0.2; transition: all 0.25s ease; text-align: center; }
-    .active { transform: scale(1.1); box-shadow: 0 0 15px #fff; }
-    .C { background: #4fc3f7; } .Csharp { background: #26a69a; } .D { background: #66bb6a; }
-    .Dsharp { background: #8bc34a; } .E { background: #dce775; color: #000; } .F { background: #ffb74d; }
-    .Fsharp { background: #ff8a65; } .G { background: #ef5350; } .Gsharp { background: #ba68c8; } 
-    .A { background: #9575cd; } .Asharp { background: #7986cb; } .B { background: #64b5f6; }
-    .note-display { margin-top: 20px; font-size: 28px; font-weight: bold; padding: 10px 20px; border-radius: 10px; background: #222; display: inline-block; box-shadow: 0 0 10px #000; transition: background 0.3s ease; }
-    .magnitude-display { margin-top: 5px; font-size: 18px; color: #ccc; }
-    button { margin: 5px; padding: 10px 20px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; opacity: 0.3; transition: opacity 0.2s ease; }
-    button:enabled { opacity: 1; }
+    body {
+      background: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .keyboards {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin: 30px auto;
+      max-width: 1000px;
+    }
+
+    .keyboard {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .key {
+      width: 55px;
+      height: 70px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: bold;
+      font-size: 13px;
+      opacity: 0.2;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
+
+    .active {
+      opacity: 1;
+      box-shadow: 0 0 20px #fff;
+      transform: scale(1.1);
+    }
+
+    .C { background: #4fc3f7; }
+    .Csharp { background: #26a69a; }
+    .D { background: #66bb6a; }
+    .Dsharp { background: #8bc34a; }
+    .E { background: #dce775; color: #000; }
+    .F { background: #ffb74d; }
+    .Fsharp { background: #ff8a65; }
+    .G { background: #ef5350; }
+    .Gsharp { background: #ba68c8; }
+    .A { background: #9575cd; }
+    .Asharp { background: #7986cb; }
+    .B { background: #64b5f6; }
+
+    .note-display {
+      margin-top: 20px;
+      font-size: 28px;
+      font-weight: bold;
+      padding: 10px 20px;
+      border-radius: 10px;
+      background: #222;
+      display: inline-block;
+      box-shadow: 0 0 10px #000;
+      transition: background 0.3s ease;
+    }
+
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      opacity: 0.3;
+      transition: opacity 0.3s ease;
+    }
+
+    button:enabled {
+      opacity: 1;
+    }
+
     #startBtn { background: #4caf50; color: white; }
     #stopBtn { background: #f44336; color: white; }
   </style>
@@ -41,6 +111,7 @@
       <div class="key Asharp" data-note="A#4">A#4 / Bb4</div>
       <div class="key B" data-note="B4">B4</div>
     </div>
+
     <div class="keyboard" id="octave5">
       <div class="key C" data-note="C5">C5</div>
       <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
@@ -58,76 +129,68 @@
   </div>
 
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
-  <div class="magnitude-display" id="magnitudeDisplay">Magnitude: 0</div>
 
   <script>
-    let mediaRecorder, isRecording=false, stream;
+    let mediaRecorder;
+    let isRecording = false;
+    let stream;
+
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const noteDisplay = document.getElementById('noteDisplay');
-    const magnitudeDisplay = document.getElementById('magnitudeDisplay');
     const keys = document.querySelectorAll('.key');
 
-    function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
 
-    function highlightNote(note, freq, magnitude) {
-      keys.forEach(k => { k.classList.remove('active'); k.style.opacity=''; k.style.boxShadow='none'; });
+    // ======================
+    // Função robusta de destaque
+    // ======================
+    function highlightNote(note, freq) {
+      keys.forEach(k => k.classList.remove('active'));
 
-      // Usa diretamente a nota do backend para decidir PAUSA
-      if (note === "PAUSA") {
+      // Qualquer valor inválido ou que não corresponda a nota musical válida é tratado como PAUSA
+      if (!note || typeof note !== 'string' || !note.match(/^[A-G]#?\d$/) || note === "PAUSA") {
         noteDisplay.textContent = "PAUSA";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
-        magnitudeDisplay.textContent = "Magnitude: 0";
-        return;
-      }
-
-      // Normaliza magnitude
-      const MAG_MAX = 1e7; 
-      let normalized = magnitude / MAG_MAX;
-      normalized = Math.min(normalized, 1);
-
-      // Define opacidade de acordo com magnitude normalizada (3 faixas)
-      let opacity;
-      if (normalized < 0.3) opacity = 0.3;     
-      else if (normalized < 0.7) opacity = 0.6; 
-      else opacity = 1;                         
-
-      const keyEl = document.querySelector(`.key[data-note="${note}"]`);
-      if (keyEl) {
-        keyEl.classList.add('active');
-        keyEl.style.opacity = opacity;
-
-        noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
-        noteDisplay.style.color = window.getComputedStyle(keyEl).color;
+      } else {
+        const keyEl = document.querySelector(`.key[data-note="${note}"]`);
+        if (keyEl) {
+          keyEl.classList.add('active');
+          noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
+          noteDisplay.style.color = window.getComputedStyle(keyEl).color;
+        }
         noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz`;
       }
-
-      magnitudeDisplay.textContent = `Magnitude: ${magnitude} (normalizada: ${normalized.toFixed(2)})`;
     }
 
     async function enviarAudio(blob) {
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
+
       try {
-        const response = await fetch('https://teste-fb8o.onrender.com/upload', { method:'POST', body: formData });
+        const response = await fetch('https://teste-fb8o.onrender.com/upload', {
+          method: 'POST',
+          body: formData
+        });
         const data = await response.json();
-        highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude);
-      } catch(err) {
+        highlightNote(data.dominantNote, data.dominantFrequency);
+      } catch (err) {
         console.error(err);
         noteDisplay.textContent = "Erro na análise";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
-        magnitudeDisplay.textContent = "Magnitude: 0";
       }
     }
 
     async function gravarEProcessar() {
-      while(isRecording) {
+      while (isRecording) {
         mediaRecorder.start();
         const audioBlob = await new Promise(resolve => {
           mediaRecorder.ondataavailable = e => resolve(e.data);
-          setTimeout(()=>mediaRecorder.stop(),1000);
+          setTimeout(() => mediaRecorder.stop(), 1000);
         });
         await enviarAudio(audioBlob);
         await delay(1000);
@@ -147,20 +210,24 @@
         noteDisplay.style.color = "#fff";
 
         gravarEProcessar();
-      } catch(err) { alert('Erro ao acessar o microfone'); console.error(err); }
+      } catch (err) {
+        alert('Erro ao acessar o microfone.');
+        console.error(err);
+      }
     };
 
     stopBtn.onclick = () => {
-      isRecording=false;
-      if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop();
-      if(stream) stream.getTracks().forEach(track=>track.stop());
-      startBtn.disabled=false;
-      stopBtn.disabled=true;
-      noteDisplay.textContent="Gravação parada";
-      noteDisplay.style.background="#222";
-      noteDisplay.style.color="#fff";
-      magnitudeDisplay.textContent = "Magnitude: 0";
-      keys.forEach(k=>{ k.classList.remove('active'); k.style.opacity=''; });
+      isRecording = false;
+      mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop();
+      stream && stream.getTracks().forEach(track => track.stop());
+
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+
+      noteDisplay.textContent = "Gravação parada";
+      noteDisplay.style.background = "#222";
+      noteDisplay.style.color = "#fff";
+      keys.forEach(k => k.classList.remove('active'));
     };
   </script>
 </body>
