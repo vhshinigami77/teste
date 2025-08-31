@@ -83,10 +83,11 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     // ==================
-    // Normalização baseada em RMS da janela
+    // Normalização baseada em RMS da janela + fator de escala
     // ==================
     const rms = Math.sqrt(int16Samples.slice(0, N).reduce((sum, s) => sum + s*s, 0) / N);
-    const normalizedMagnitude = Math.min(maxMag / (rms * N), 1); // escala 0~1
+    let normalizedMagnitude = maxMag / (rms * N) * 10; // fator 10 para ajustar escala
+    normalizedMagnitude = Math.min(normalizedMagnitude, 1); // garante 0~1
 
     // LOG
     console.log('============================');
