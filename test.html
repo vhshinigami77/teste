@@ -64,21 +64,26 @@
     const stopBtn = document.getElementById('stopBtn');
     const noteDisplay = document.getElementById('noteDisplay');
     const keys = document.querySelectorAll('.key');
-    let sessionMaxMagnitude = 1; // magnitude máxima adaptativa
+    let sessionMaxMagnitude = 1; // magnitude máxima adaptativa da sessão
 
     function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     function highlightNote(note, freq, magnitude) {
-      keys.forEach(k => { k.classList.remove('active'); k.style.opacity = ''; k.style.boxShadow='none'; });
+      keys.forEach(k => { k.classList.remove('active'); k.style.opacity=''; k.style.boxShadow='none'; });
 
-      if (!note || note === "PAUSA") {
+      // ================================
+      // Detecção de PAUSA
+      // ================================
+      if (!note || note === "PAUSA" || magnitude === 0) {
         noteDisplay.textContent = "PAUSA";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
         return;
       }
 
-      // Atualiza máxima magnitude da sessão
+      // ================================
+      // Intensidade adaptativa
+      // ================================
       sessionMaxMagnitude = Math.max(sessionMaxMagnitude, magnitude);
       let intensity = magnitude / sessionMaxMagnitude;
       intensity = Math.min(intensity, 1);
@@ -86,7 +91,7 @@
       const keyEl = document.querySelector(`.key[data-note="${note}"]`);
       if (keyEl) {
         keyEl.classList.add('active');
-        const opacity = 0.2 + intensity * (1-0.2);
+        const opacity = 0.2 + intensity * (1-0.2); // mapeia intensidade para opacidade
         keyEl.style.opacity = opacity;
 
         noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
