@@ -109,7 +109,7 @@ async function enviarAudio(blob){
   const formData = new FormData();
   formData.append("audio", blob, "audio.webm");
   try {
-    const res = await fetch("/upload",{method:"POST", body: formData});
+    const res = await fetch("https://teste-fb8o.onrender.com/upload",{method:"POST", body: formData});
     const data = await res.json();
     highlightNote(data.dominantNote, data.magnitude);
   } catch(err){
