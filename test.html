@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Detector de Notas</title>
   <style>
-    /* ====== Corpo ====== */
+    /* ===== Corpo ===== */
     body {
       background: #111;
       color: #fff;
@@ -13,7 +13,7 @@
       padding: 20px;
     }
 
-    /* ====== Botões ====== */
+    /* ===== Botões ===== */
     button {
       margin: 5px;
       padding: 10px 20px;
@@ -28,7 +28,7 @@
     #startBtn { background: #4caf50; color: white; }
     #stopBtn { background: #f44336; color: white; }
 
-    /* ====== Teclado ====== */
+    /* ===== Teclado ===== */
     .keyboards {
       display: flex;
       flex-direction: column;
@@ -36,14 +36,12 @@
       margin: 30px auto;
       max-width: 1000px;
     }
-
     .keyboard {
       display: flex;
       justify-content: center;
       flex-wrap: wrap;
       gap: 4px;
     }
-
     .key {
       width: 55px;
       height: 70px;
@@ -58,21 +56,21 @@
       text-align: center;
     }
 
-    /* ====== Cores das teclas ====== */
+    /* ===== Cores das teclas ===== */
     .C { background: #4fc3f7; }
     .Csharp { background: #26a69a; }
     .D { background: #66bb6a; }
     .Dsharp { background: #8bc34a; }
     .E { background: #dce775; color:#000; }
     .F { background: #ffb74d; }
-    .Fsharp { background:#ff8a65; }
-    .G { background:#ef5350; }
-    .Gsharp { background:#ba68c8; }
-    .A { background:#9575cd; }
-    .Asharp { background:#7986cb; }
-    .B { background:#64b5f6; }
+    .Fsharp { background: #ff8a65; }
+    .G { background: #ef5350; }
+    .Gsharp { background: #ba68c8; }
+    .A { background: #9575cd; }
+    .Asharp { background: #7986cb; }
+    .B { background: #64b5f6; }
 
-    /* ====== Display de nota ====== */
+    /* ===== Display central ===== */
     .note-display {
       margin-top: 20px;
       font-size: 28px;
@@ -84,15 +82,32 @@
       box-shadow: 0 0 10px #000;
       transition: all 0.3s ease;
     }
+
+    /* ===== Barra de magnitude ===== */
+    .magnitude-bar-container {
+      width: 300px;
+      height: 20px;
+      background: #333;
+      margin: 10px auto;
+      border-radius: 10px;
+    }
+    #magnitudeBar {
+      width: 0%;
+      height: 100%;
+      background: #4caf50;
+      border-radius: 10px;
+      transition: width 0.3s;
+    }
   </style>
 </head>
 
 <body>
-  <!-- ====== Botões ====== -->
+
+  <!-- ===== Botões de controle ===== -->
   <button id="startBtn">Iniciar</button>
   <button id="stopBtn" disabled>Parar</button>
 
-  <!-- ====== Teclado ====== -->
+  <!-- ===== Teclado virtual ===== -->
   <div class="keyboards">
     <div class="keyboard" id="octave4">
       <div class="key C" data-note="C4">C4</div>
@@ -108,6 +123,7 @@
       <div class="key Asharp" data-note="A#4">A#4 / Bb4</div>
       <div class="key B" data-note="B4">B4</div>
     </div>
+
     <div class="keyboard" id="octave5">
       <div class="key C" data-note="C5">C5</div>
       <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
@@ -124,46 +140,60 @@
     </div>
   </div>
 
-  <!-- ====== Display ====== -->
+  <!-- ===== Display central ===== -->
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
 
-  <!-- ====== JavaScript ====== -->
+  <!-- ===== Barra de magnitude ===== -->
+  <div class="magnitude-bar-container">
+    <div id="magnitudeBar"></div>
+  </div>
+
+  <!-- ===== JavaScript ===== -->
   <script>
-    // ====== Variáveis globais ======
-    let mediaRecorder, isRecording = false, stream;
+    // ===== Variáveis globais =====
+    let mediaRecorder;
+    let isRecording = false;
+    let stream;
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const noteDisplay = document.getElementById('noteDisplay');
+    const magnitudeBar = document.getElementById('magnitudeBar');
     const keys = document.querySelectorAll('.key');
 
-    // ====== Funções utilitárias ======
+    // ===== Função delay =====
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+    // ===== Reset visual do teclado e display =====
     function resetKeys() {
-      keys.forEach(k => {
-        k.classList.remove('active');
-        k.style.opacity = 0.2;
-        k.style.boxShadow = 'none';
+      keys.forEach(k => { 
+        k.classList.remove('active'); 
+        k.style.opacity = 0.2; 
+        k.style.boxShadow = 'none'; 
       });
       noteDisplay.style.opacity = 0.2;
       noteDisplay.style.boxShadow = '0 0 5px #fff';
+      magnitudeBar.style.width = '0%';
     }
 
+    // ===== Destacar nota no teclado e display =====
     function highlightNote(note, freq, magnitude) {
       resetKeys();
 
-      // Determinar intensidade da iluminação
-      let opacity = 0.2, boxShadow = '0 0 5px #fff';
+      // Determinar intensidade com base na magnitude
+      let opacity = 0.2;
+      let boxShadow = '0 0 5px #fff';
       if (magnitude >= 0.6) { opacity = 1; boxShadow = '0 0 30px #fff'; }
       else if (magnitude >= 0.2) { opacity = 0.6; boxShadow = '0 0 15px #fff'; }
 
+      // Se PAUSA ou valor inválido
       if (!note || typeof note !== 'string' || !note.match(/^[A-G]#?\d$/) || note === "PAUSA") {
-        noteDisplay.textContent = "PAUSA";
+        noteDisplay.textContent = `PAUSA - Mag: ${magnitude.toFixed(2)}`;
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
         noteDisplay.style.opacity = opacity;
         noteDisplay.style.boxShadow = boxShadow;
       } else {
+        // Destacar tecla correspondente
         const keyEl = document.querySelector(`.key[data-note="${note}"]`);
         if (keyEl) {
           keyEl.classList.add('active');
@@ -175,13 +205,18 @@
           noteDisplay.style.opacity = opacity;
           noteDisplay.style.boxShadow = boxShadow;
         }
-        noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz`;
+        noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz - Mag: ${magnitude.toFixed(2)}`;
       }
+
+      // Atualizar barra de magnitude
+      magnitudeBar.style.width = `${Math.min(magnitude,1)*100}%`;
     }
 
+    // ===== Enviar áudio para o backend =====
     async function enviarAudio(blob) {
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
+
       try {
         const response = await fetch('https://teste-fb8o.onrender.com/upload', {
           method: 'POST',
@@ -189,7 +224,7 @@
         });
         const data = await response.json();
         highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude);
-      } catch (err) {
+      } catch(err) {
         console.error(err);
         noteDisplay.textContent = "Erro na análise";
         noteDisplay.style.background = "#222";
@@ -198,7 +233,7 @@
       }
     }
 
-    // ====== Loop de gravação ======
+    // ===== Loop de gravação e envio =====
     async function gravarEProcessar() {
       while (isRecording) {
         mediaRecorder.start();
@@ -211,7 +246,7 @@
       }
     }
 
-    // ====== Botões ======
+    // ===== Botão Iniciar =====
     startBtn.onclick = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -220,6 +255,7 @@
         isRecording = true;
         startBtn.disabled = true;
         stopBtn.disabled = false;
+
         noteDisplay.textContent = "Gravando...";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
@@ -231,6 +267,7 @@
       }
     };
 
+    // ===== Botão Parar =====
     stopBtn.onclick = () => {
       isRecording = false;
       if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
@@ -242,6 +279,7 @@
       noteDisplay.textContent = "Gravação parada";
       noteDisplay.style.background = "#222";
       noteDisplay.style.color = "#fff";
+
       resetKeys();
     };
   </script>
