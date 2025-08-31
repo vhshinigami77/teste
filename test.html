@@ -22,7 +22,6 @@
     font-weight: bold; font-size: 13px; text-align: center; transition: all 0.3s ease; filter: brightness(0.2); color: #000;
   }
 
-  /* Cores originais */
   .C { background: #4fc3f7; }
   .Csharp { background: #26a69a; }
   .D { background: #66bb6a; }
@@ -97,7 +96,6 @@ function highlightNote(note, normalizedMag){
     noteDisplay.textContent = note;
     magnitudeDisplay.textContent="Magnitude: "+normalizedMag.toFixed(2);
 
-    // Display central proporcional
     const bgVal = 34 + 221*normalizedMag;
     const r = Math.round(bgVal);
     noteDisplay.style.background = `rgb(${r}, ${r/2}, ${r/2})`;
@@ -108,8 +106,12 @@ function highlightNote(note, normalizedMag){
 async function enviarAudio(blob){
   const formData = new FormData();
   formData.append("audio", blob, "audio.webm");
+
   try {
-    const res = await fetch("https://teste-fb8o.onrender.com/upload",{method:"POST", body: formData});
+    const res = await fetch("https://teste-fb8o.onrender.com/upload", {
+      method: "POST",
+      body: formData
+    });
     const data = await res.json();
     highlightNote(data.dominantNote, data.magnitude);
   } catch(err){
@@ -117,6 +119,7 @@ async function enviarAudio(blob){
     noteDisplay.textContent="Erro";
     noteDisplay.style.background="#222";
     magnitudeDisplay.textContent="-";
+    resetKeys();
   }
 }
 
