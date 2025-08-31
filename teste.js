@@ -19,18 +19,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ========================
-// Função: frequencyToNoteCStyle corrigida
+// Função: frequencyToNoteCStyle
 // ========================
 function frequencyToNoteCStyle(freq) {
   if (!freq || freq <= 0 || isNaN(freq)) return 'PAUSA';
 
-  const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  
-  const n = 12 * Math.log2(freq / 440);          // semitons relativos a A4
-  const semitoneIndex = Math.round(n) + 9;      // +9 para alinhar ao array NOTES
-  const octave = Math.floor(semitoneIndex / 12) + 4;  
-  const noteIndex = ((semitoneIndex % 12) + 12) % 12; // garante índice positivo
-  return `${NOTES[noteIndex]}${octave}`;
+  const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+  const n = 12 * Math.log2(freq / 440);
+  const q = Math.floor(Math.round(n + 9) / 12);
+  const r = Math.round(n + 9) % 12;
+
+  return `${NOTES[r]}${4 + q}`;
 }
 
 // Serve arquivos estáticos
@@ -97,7 +97,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     let note;
     if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
       note = 'PAUSA';
-      peakFreq = 0;
+      peakFreq = 0; // Frequência 0 quando é pausa
     } else {
       note = frequencyToNoteCStyle(peakFreq);
     }
@@ -116,8 +116,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // Envia resposta JSON
     res.json({
       dominantFrequency: peakFreq,
-      dominantNote: note,
-      magnitude: maxMag
+      dominantNote: note
     });
 
     // Remove arquivos temporários
