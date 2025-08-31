@@ -1,3 +1,4 @@
+// backend.js
 import express from "express";
 import multer from "multer";
 import fs from "fs";
@@ -15,6 +16,7 @@ const upload = multer({ dest: "uploads/" });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Função: Converter frequência para nota musical
 function frequencyToNoteCStyle(freq) {
   if (!freq || freq <= 0 || isNaN(freq)) return "PAUSA";
   const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
@@ -24,10 +26,13 @@ function frequencyToNoteCStyle(freq) {
   return `${NOTES[r]}${4 + q}`;
 }
 
+// Rota: Upload e análise de áudio
 app.post("/upload", upload.single("audio"), async (req, res) => {
   try {
     const inputPath = req.file.path;
     const outputPath = `${inputPath}.wav`;
+
+    // Converte para WAV mono 44.1kHz
     execSync(`ffmpeg -i ${inputPath} -ar 44100 -ac 1 ${outputPath}`);
 
     const buffer = fs.readFileSync(outputPath);
@@ -38,6 +43,7 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
       int16Samples.push(buffer.readInt16LE(i));
     }
 
+    // DFT manual
     const windowSize = sampleRate;
     const N = Math.min(windowSize, int16Samples.length);
     const freqStep = 2;
@@ -46,6 +52,7 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
 
     let maxMag = 0;
     let peakFreq = 0;
+
     for (let freq = minFreq; freq <= maxFreq; freq += freqStep) {
       let real = 0, imag = 0;
       for (let n = 0; n < N; n++) {
@@ -60,32 +67,28 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
       }
     }
 
-    // Normaliza magnitude de 0 a 1
-    const maxPossible = int16Samples.reduce((acc,v)=>acc+Math.abs(v),0);
-    const normalizedMag = Math.min(maxMag / maxPossible, 1);
-
-    // Determina nível
-    let level = "low";
-    if (normalizedMag > 0.6) level = "high";
-    else if (normalizedMag > 0.3) level = "medium";
+    // Normaliza magnitude entre 0 e 1
+    let normalizedMag = maxMag / 32768 / N; // N é o número de amostras, 32768 é max int16
+    if(normalizedMag>1) normalizedMag=1;
 
     const note = peakFreq ? frequencyToNoteCStyle(peakFreq) : "PAUSA";
 
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: normalizedMag,
-      level: level
+      magnitude: normalizedMag
     });
 
+    // Limpeza de arquivos temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
 
-  } catch (err) {
+  } catch(err){
     console.error(err);
     res.status(500).json({ error: "Erro na análise do áudio." });
   }
 });
 
+// Inicializa servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
