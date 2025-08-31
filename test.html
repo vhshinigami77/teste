@@ -48,11 +48,25 @@
     align-items: center;
     font-weight: bold;
     font-size: 13px;
-    opacity: 0.2;
-    transition: all 0.3s ease;
     text-align: center;
-    color: #fff;
+    transition: all 0.3s ease;
+    color: #000;
+    filter: brightness(0.2); /* brilho mínimo inicial */
   }
+
+  /* Cores originais das teclas */
+  .C { background: #4fc3f7; }
+  .Csharp { background: #26a69a; }
+  .D { background: #66bb6a; }
+  .Dsharp { background: #8bc34a; }
+  .E { background: #dce775; }
+  .F { background: #ffb74d; }
+  .Fsharp { background: #ff8a65; }
+  .G { background: #ef5350; }
+  .Gsharp { background: #ba68c8; }
+  .A { background: #9575cd; }
+  .Asharp { background: #7986cb; }
+  .B { background: #64b5f6; }
 
   .note-display {
     margin-top: 20px;
@@ -111,32 +125,36 @@ octaves.forEach(oct => {
 // ======== Estado de gravação ========
 let mediaRecorder, stream, isRecording = false;
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
-function resetKeys(){ Object.values(keys).forEach(k=>k.style.opacity=0.2); }
+
+// ======== Resetar teclas ========
+function resetKeys(){
+  Object.values(keys).forEach(k => {
+    k.style.filter = "brightness(0.2)";
+  });
+}
 
 // ======== Atualiza teclado e display ========
 function highlightNote(note, normalizedMag){
   resetKeys();
   
-  // Magnitude proporcional à intensidade (0.2 ~ 1)
-  const opacity = 0.2 + 0.8 * normalizedMag;
-  
   if(!note || note==="PAUSA"){
     noteDisplay.textContent = "PAUSA";
     noteDisplay.style.background="#222";
-    magnitudeDisplay.textContent = "Magnitude: 0";
+    magnitudeDisplay.textContent="Magnitude: 0";
   } else {
     const keyEl = keys[note];
     if(keyEl){
-      keyEl.style.opacity = opacity;
+      const brightness = 0.2 + 0.8 * normalizedMag; // brilho proporcional
+      keyEl.style.filter = `brightness(${brightness})`;
     }
     noteDisplay.textContent = note;
-    magnitudeDisplay.textContent = "Magnitude: " + normalizedMag.toFixed(2);
-  }
+    magnitudeDisplay.textContent="Magnitude: "+normalizedMag.toFixed(2);
 
-  // Display central também com intensidade proporcional
-  const bgVal = 34 + 221*normalizedMag; // 34~255
-  const r = Math.round(bgVal);
-  noteDisplay.style.background = `rgb(${r}, ${r/2}, ${r/2})`;
+    // Display central também proporcional
+    const bgVal = 34 + 221*normalizedMag; // 34~255
+    const r = Math.round(bgVal);
+    noteDisplay.style.background = `rgb(${r}, ${r/2}, ${r/2})`;
+  }
 }
 
 // ======== Enviar áudio para backend ========
