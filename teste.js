@@ -72,7 +72,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // ==================
     // Limiar e conversão
     // ==================
-    const limiar = 1000; // valor ajustado para ignorar ruídos fracos
+    const limiar = 1000; // ignora ruídos fracos
     let note;
     if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
       note = 'PAUSA';
@@ -83,10 +83,10 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     // ==================
-    // Normalização baseada no pico real do áudio
+    // Normalização baseada em RMS da janela
     // ==================
-    const peakSample = Math.max(...int16Samples.slice(0, N).map(s => Math.abs(s))) || 1;
-    const normalizedMagnitude = Math.min(maxMag / peakSample / 10000, 1); // escala para 0~1
+    const rms = Math.sqrt(int16Samples.slice(0, N).reduce((sum, s) => sum + s*s, 0) / N);
+    const normalizedMagnitude = Math.min(maxMag / (rms * N), 1); // escala 0~1
 
     // LOG
     console.log('============================');
