@@ -16,9 +16,9 @@ const upload = multer({ dest: "uploads/" });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Função: Converter frequência para nota musical
+// ======== Converter frequência em nota musical ========
 function frequencyToNoteCStyle(freq) {
-  if (!freq || freq <= 0 || isNaN(freq)) return "PAUSA";
+  if(!freq || freq <= 0 || isNaN(freq)) return "PAUSA";
   const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
   const n = 12 * Math.log2(freq / 440);
   const q = Math.floor(Math.round(n + 9) / 12);
@@ -26,9 +26,11 @@ function frequencyToNoteCStyle(freq) {
   return `${NOTES[r]}${4 + q}`;
 }
 
-// Rota: Upload e análise de áudio
+// ======== Rota: Upload e análise de áudio ========
 app.post("/upload", upload.single("audio"), async (req, res) => {
   try {
+    if(!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado" });
+
     const inputPath = req.file.path;
     const outputPath = `${inputPath}.wav`;
 
@@ -39,13 +41,13 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
     const headerSize = 44;
     const sampleRate = 44100;
     const int16Samples = [];
-    for (let i = headerSize; i < buffer.length; i += 2) {
+
+    for(let i = headerSize; i < buffer.length; i += 2){
       int16Samples.push(buffer.readInt16LE(i));
     }
 
-    // DFT manual
-    const windowSize = sampleRate;
-    const N = Math.min(windowSize, int16Samples.length);
+    // ======== DFT manual ========
+    const N = Math.min(sampleRate, int16Samples.length);
     const freqStep = 2;
     const minFreq = 16;
     const maxFreq = 1048;
@@ -53,30 +55,37 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
     let maxMag = 0;
     let peakFreq = 0;
 
-    for (let freq = minFreq; freq <= maxFreq; freq += freqStep) {
+    for(let freq = minFreq; freq <= maxFreq; freq += freqStep){
       let real = 0, imag = 0;
-      for (let n = 0; n < N; n++) {
+      for(let n = 0; n < N; n++){
         const angle = (2 * Math.PI * freq * n) / sampleRate;
         real += int16Samples[n] * Math.cos(angle);
         imag -= int16Samples[n] * Math.sin(angle);
       }
       const magnitude = Math.sqrt(real*real + imag*imag);
-      if (magnitude > maxMag) {
+      if(magnitude > maxMag){
         maxMag = magnitude;
         peakFreq = freq;
       }
     }
 
-    // Normaliza magnitude entre 0 e 1
-    let normalizedMag = maxMag / 32768 / N; // N é o número de amostras, 32768 é max int16
-    if(normalizedMag>1) normalizedMag=1;
+    // ======== Normaliza magnitude ========
+    let normalizedMag = maxMag / (32768 * N);
+    if(normalizedMag > 1) normalizedMag = 1;
+
+    // ======== Níveis de magnitude ========
+    let level = "low";
+    if(normalizedMag > 0.6) level = "high";
+    else if(normalizedMag > 0.3) level = "medium";
 
     const note = peakFreq ? frequencyToNoteCStyle(peakFreq) : "PAUSA";
 
+    // ======== Retorna JSON ========
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: normalizedMag
+      magnitude: normalizedMag,
+      level
     });
 
     // Limpeza de arquivos temporários
@@ -85,10 +94,10 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
 
   } catch(err){
     console.error(err);
-    res.status(500).json({ error: "Erro na análise do áudio." });
+    res.status(500).json({ error: "Erro na análise do áudio" });
   }
 });
 
-// Inicializa servidor
+// ======== Inicializa servidor ========
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
