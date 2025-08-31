@@ -1,4 +1,3 @@
-// backend.js
 import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
@@ -73,7 +72,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // ==================
     // Limiar e conversão
     // ==================
-    const limiar = 2e-3;
+    const limiar = 1000; // valor ajustado para ignorar ruídos fracos
     let note;
     if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
       note = 'PAUSA';
@@ -86,8 +85,8 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // ==================
     // Normalização baseada no pico real do áudio
     // ==================
-    const peakSample = Math.max(...int16Samples.slice(0, N).map(s => Math.abs(s))) || 1; // evita divisão por 0
-    const normalizedMagnitude = maxMag / (peakSample * N);
+    const peakSample = Math.max(...int16Samples.slice(0, N).map(s => Math.abs(s))) || 1;
+    const normalizedMagnitude = Math.min(maxMag / peakSample / 10000, 1); // escala para 0~1
 
     // LOG
     console.log('============================');
