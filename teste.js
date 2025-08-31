@@ -2,14 +2,18 @@
 import express from "express";
 import multer from "multer";
 import fs from "fs";
+import path from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
-import path from "path";
+import cors from "cors"; // ES Module import
 
+// ==========================
+// Configurações iniciais
+// ==========================
 const app = express();
 app.use(express.json());
 app.use(express.static("public"));
-app.use(require("cors")());
+app.use(cors());
 
 const upload = multer({ dest: "uploads/" });
 
@@ -21,7 +25,7 @@ const __dirname = path.dirname(__filename);
 // ==========================
 function frequencyToNoteCStyle(freq) {
   if (!freq || freq <= 0 || isNaN(freq)) return "PAUSA";
-  const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
   const n = 12 * Math.log2(freq / 440);
   const q = Math.floor(Math.round(n + 9) / 12);
   const r = Math.round(n + 9) % 12;
@@ -66,7 +70,7 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
         real += int16Samples[n] * Math.cos(angle);
         imag -= int16Samples[n] * Math.sin(angle);
       }
-      const magnitude = Math.sqrt(real * real + imag * imag);
+      const magnitude = Math.sqrt(real*real + imag*imag);
       if (magnitude > maxMag) {
         maxMag = magnitude;
         peakFreq = freq;
@@ -94,7 +98,7 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
       dominantFrequency: peakFreq,
       dominantNote: note,
       magnitude: maxMag,
-      level: magnitudeLevel,
+      level: magnitudeLevel
     });
 
     // ==========================
