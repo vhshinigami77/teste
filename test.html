@@ -2,11 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Detector de Notas </title>
+  <title>Detector de Notas</title>
   <style>
-    /* ======================
-       Estilo da página
-    ====================== */
+    /* ======== Estilo geral ======== */
     body {
       background: #111;
       color: #fff;
@@ -15,7 +13,6 @@
       padding: 20px;
     }
 
-    /* Contêiner dos teclados */
     .keyboards {
       display: flex;
       flex-direction: column;
@@ -24,7 +21,6 @@
       max-width: 1000px;
     }
 
-    /* Linha de teclas */
     .keyboard {
       display: flex;
       justify-content: center;
@@ -32,7 +28,8 @@
       gap: 4px;
     }
 
-    /* Estilo base da tecla */
+    /* Teclas: começam mais “apagadas” (0.2) por CSS;
+       quando ativa, aplicaremos opacidade via inline-style (JS) para sobrescrever isso. */
     .key {
       width: 55px;
       height: 70px;
@@ -42,18 +39,18 @@
       align-items: center;
       font-weight: bold;
       font-size: 13px;
-      opacity: 0.2;              /* Opacidade baixa quando "inativa" */
-      transition: all 0.3s ease;
+      opacity: 0.2;
+      transition: all 0.25s ease; /* transição suave ao variar opacidade/escala */
       text-align: center;
     }
 
-    /* Quando ativa, aumenta a opacidade e escala */
+    /* Mantemos apenas o “efeito de escala” na ativa;
+       a opacidade agora é controlada dinamicamente via JS. */
     .active {
-      opacity: 1;
       transform: scale(1.1);
     }
 
-    /* Cores das teclas */
+    /* Paleta de cores por nota */
     .C { background: #4fc3f7; }
     .Csharp { background: #26a69a; }
     .D { background: #66bb6a; }
@@ -67,7 +64,6 @@
     .Asharp { background: #7986cb; }
     .B { background: #64b5f6; }
 
-    /* Área de exibição da nota detectada */
     .note-display {
       margin-top: 20px;
       font-size: 28px;
@@ -80,7 +76,6 @@
       transition: background 0.3s ease;
     }
 
-    /* Estilo dos botões */
     button {
       margin: 5px;
       padding: 10px 20px;
@@ -88,27 +83,23 @@
       border: none;
       border-radius: 6px;
       cursor: pointer;
-      opacity: 0.3;               /* desativado */
-      transition: opacity 0.3s ease;
+      opacity: 0.3; /* aparência de desabilitado por padrão */
+      transition: opacity 0.2s ease;
     }
 
-    button:enabled {
-      opacity: 1;                 /* ativado */
-    }
-
+    button:enabled { opacity: 1; }
     #startBtn { background: #4caf50; color: white; }
     #stopBtn { background: #f44336; color: white; }
   </style>
 </head>
 <body>
 
-  <!-- Botões de controle -->
+  <!-- Controles -->
   <button id="startBtn">Iniciar</button>
   <button id="stopBtn" disabled>Parar</button>
 
-  <!-- Teclado virtual (duas oitavas) -->
+  <!-- Teclado (oitavas 4 e 5) -->
   <div class="keyboards">
-    <!-- Oitava 4 -->
     <div class="keyboard" id="octave4">
       <div class="key C" data-note="C4">C4</div>
       <div class="key Csharp" data-note="C#4">C#4 / Db4</div>
@@ -124,7 +115,6 @@
       <div class="key B" data-note="B4">B4</div>
     </div>
 
-    <!-- Oitava 5 -->
     <div class="keyboard" id="octave5">
       <div class="key C" data-note="C5">C5</div>
       <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
@@ -141,7 +131,6 @@
     </div>
   </div>
 
-  <!-- Exibição da nota atual -->
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
 
   <script>
@@ -150,58 +139,69 @@
     let stream;
 
     const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
+    const stopBtn   = document.getElementById('stopBtn');
     const noteDisplay = document.getElementById('noteDisplay');
     const keys = document.querySelectorAll('.key');
 
-    // Utilitário de delay (pausa assíncrona)
-    function delay(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
-    }
+    // ===== Normalização adaptativa por sessão =====
+    // Mantém um "máximo dinâmico" que decai com o tempo.
+    // Se o usuário aumentar o volume, o máximo sobe; se diminuir, o máximo desce aos poucos.
+    let dynMax = 1;            // evita divisão por zero no início
+    const DECAY = 0.995;       // quanto mais próximo de 1, mais lento o decaimento
+    const BASE_OPACITY = 0.2;  // opacidade mínima (igual à do CSS das teclas)
+    const MAX_OPACITY  = 1.0;  // opacidade máxima
+
+    function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     /**
-     * Destaca uma tecla de acordo com a nota detectada.
-     * O brilho depende da magnitude relativa (magnitude / maxMagnitude).
+     * Aplica destaque por opacidade proporcional à magnitude:
+     * - Calcula intensidade = magnitude / dynMax (clamp 0..1).
+     * - Converte intensidade para opacidade entre BASE_OPACITY e MAX_OPACITY.
+     * - Atualiza dynMax com decaimento (auto-ajuste de faixa dinâmica).
      */
-    function highlightNote(note, freq, magnitude, maxMagnitude) {
-      // Limpa destaques anteriores
+    function highlightNote(note, freq, magnitude) {
+      // Reseta estado visual anterior das teclas
       keys.forEach(k => {
         k.classList.remove('active');
         k.style.boxShadow = "none";
+        k.style.opacity = ""; // volta para o CSS padrão (0.2) se não for a tecla ativa
       });
 
-      // Caso "pausa"
+      // Caso seja pausa ou nota inválida: só exibe "PAUSA" e não destaca tecla
       if (!note || typeof note !== 'string' || !note.match(/^[A-G]#?\d$/) || note === "PAUSA") {
         noteDisplay.textContent = "PAUSA";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
-      } else {
-        const keyEl = document.querySelector(`.key[data-note="${note}"]`);
-        if (keyEl) {
-          keyEl.classList.add('active');
-
-          // Normalização adaptativa
-          let intensity = maxMagnitude > 0 ? magnitude / maxMagnitude : 0;
-          intensity = Math.min(1, intensity);
-
-          // Brilho proporcional
-          let glowSize = 20 + intensity * 50;
-          let glowOpacity = 0.3 + intensity * 0.7;
-
-          keyEl.style.boxShadow = `0 0 ${glowSize}px rgba(255,255,255,${glowOpacity})`;
-
-          // Caixa de exibição acompanha a cor da tecla
-          noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
-          noteDisplay.style.color = window.getComputedStyle(keyEl).color;
-        }
-        // Mostra nota + frequência
-        noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz`;
+        // Atualiza dynMax com decaimento mesmo em pausa (mantém adaptatividade)
+        dynMax = Math.max(1, dynMax * DECAY);
+        return;
       }
+
+      const keyEl = document.querySelector(`.key[data-note="${note}"]`);
+      if (keyEl) {
+        keyEl.classList.add('active');
+
+        // Atualiza o máximo dinâmico com decaimento e capta novos picos
+        dynMax = Math.max(magnitude, dynMax * DECAY);
+
+        // Intensidade relativa 0..1
+        let intensity = dynMax > 0 ? (magnitude / dynMax) : 0;
+        intensity = Math.max(0, Math.min(1, intensity));
+
+        // Mapeia intensidade → opacidade (mais magnitude = mais visível)
+        const opacity = BASE_OPACITY + intensity * (MAX_OPACITY - BASE_OPACITY);
+        keyEl.style.opacity = opacity.toFixed(3); // inline-style sobrescreve o CSS
+
+        // Caixa de exibição acompanha a cor da tecla
+        noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
+        noteDisplay.style.color = window.getComputedStyle(keyEl).color;
+      }
+
+      // Texto de status
+      noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz`;
     }
 
-    /**
-     * Envia o áudio gravado para o backend e trata resposta
-     */
+    // Envia o blob de áudio ao backend e aplica destaque
     async function enviarAudio(blob) {
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
@@ -212,38 +212,33 @@
           body: formData
         });
         const data = await response.json();
-        highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude, data.maxMagnitude);
+
+        // Usamos apenas magnitude absoluta da dominante; a adaptação é local (dynMax)
+        highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude);
       } catch (err) {
         console.error(err);
         noteDisplay.textContent = "Erro na análise";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
+        // Decai o dynMax mesmo em erro, para recuperação suave
+        dynMax = Math.max(1, dynMax * DECAY);
       }
     }
 
-    /**
-     * Loop de gravação + envio + análise (1 segundo cada)
-     */
+    // Loop: grava 1s → envia → espera 1s → repete
     async function gravarEProcessar() {
       while (isRecording) {
-        // Inicia a gravação
         mediaRecorder.start();
-
-        // Captura 1s de áudio
         const audioBlob = await new Promise(resolve => {
           mediaRecorder.ondataavailable = e => resolve(e.data);
           setTimeout(() => mediaRecorder.stop(), 1000);
         });
-
-        // Envia ao backend
         await enviarAudio(audioBlob);
-
-        // Intervalo antes da próxima gravação
         await delay(1000);
       }
     }
 
-    // Clique em "Iniciar"
+    // Iniciar
     startBtn.onclick = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -256,6 +251,9 @@
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
 
+        // Reinicia o adaptador dinâmico no começo de cada sessão
+        dynMax = 1;
+
         gravarEProcessar();
       } catch (err) {
         alert('Erro ao acessar o microfone.');
@@ -263,11 +261,11 @@
       }
     };
 
-    // Clique em "Parar"
+    // Parar
     stopBtn.onclick = () => {
       isRecording = false;
-      mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop();
-      stream && stream.getTracks().forEach(track => track.stop());
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      if (stream) stream.getTracks().forEach(track => track.stop());
 
       startBtn.disabled = false;
       stopBtn.disabled = true;
@@ -275,7 +273,10 @@
       noteDisplay.textContent = "Gravação parada";
       noteDisplay.style.background = "#222";
       noteDisplay.style.color = "#fff";
-      keys.forEach(k => k.classList.remove('active'));
+      keys.forEach(k => {
+        k.classList.remove('active');
+        k.style.opacity = ""; // volta ao padrão
+      });
     };
   </script>
 </body>
