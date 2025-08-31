@@ -4,72 +4,43 @@
 <meta charset="UTF-8">
 <title>Detector de Notas</title>
 <style>
-  body {
-    background: #111;
-    color: #fff;
-    font-family: Arial, sans-serif;
-    text-align: center;
-    padding: 20px;
-  }
+  body { background: #111; color: #fff; font-family: Arial, sans-serif; text-align: center; padding: 20px; }
 
   button {
-    margin: 5px;
-    padding: 10px 20px;
-    font-size: 16px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    opacity: 0.3;
-    transition: opacity 0.3s ease;
+    margin: 5px; padding: 10px 20px; font-size: 16px;
+    border: none; border-radius: 6px; cursor: pointer; opacity: 0.3; transition: opacity 0.3s ease;
   }
   button:enabled { opacity: 1; }
   #startBtn { background: #4caf50; color: white; }
   #stopBtn { background: #f44336; color: white; }
 
-  .keyboards {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    margin: 30px auto;
-    max-width: 1000px;
-  }
-  .keyboard {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
+  .keyboards { display: flex; flex-direction: column; gap: 20px; margin: 30px auto; max-width: 1000px; }
+  .keyboard { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; }
+
   .key {
-    width: 55px;
-    height: 70px;
-    border-radius: 6px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
-    font-size: 13px;
-    opacity: 0.2;
-    transition: all 0.3s ease;
-    text-align: center;
+    width: 55px; height: 70px; border-radius: 6px; display: flex; justify-content: center; align-items: center;
+    font-weight: bold; font-size: 13px; text-align: center; transition: all 0.3s ease; filter: brightness(0.2); color: #000;
   }
-  .active { opacity: 1; box-shadow: 0 0 20px #fff; transform: scale(1.1); }
+
+  /* Cores originais */
+  .C { background: #4fc3f7; }
+  .Csharp { background: #26a69a; }
+  .D { background: #66bb6a; }
+  .Dsharp { background: #8bc34a; }
+  .E { background: #dce775; }
+  .F { background: #ffb74d; }
+  .Fsharp { background: #ff8a65; }
+  .G { background: #ef5350; }
+  .Gsharp { background: #ba68c8; }
+  .A { background: #9575cd; }
+  .Asharp { background: #7986cb; }
+  .B { background: #64b5f6; }
 
   .note-display {
-    margin-top: 20px;
-    font-size: 28px;
-    font-weight: bold;
-    padding: 10px 20px;
-    border-radius: 10px;
-    background: #222;
-    display: inline-block;
-    box-shadow: 0 0 10px #000;
-    transition: background 0.3s ease;
+    margin-top: 20px; font-size: 28px; font-weight: bold; padding: 10px 20px; border-radius: 10px;
+    background: #222; display: inline-block; box-shadow: 0 0 10px #000; transition: background 0.3s ease, color 0.3s ease;
   }
-
-  #magnitudeDisplay {
-    margin-top: 10px;
-    font-size: 20px;
-  }
+  #magnitudeDisplay { margin-top: 10px; font-size: 20px; }
 </style>
 </head>
 <body>
@@ -95,7 +66,7 @@ const stopBtn = document.getElementById("stopBtn");
 const octaves = [4,5];
 const noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 
-// ======== Criar teclas ========
+// Criar teclas
 octaves.forEach(oct => {
   const container = document.getElementById(`octave${oct}`);
   noteNames.forEach(note => {
@@ -108,39 +79,39 @@ octaves.forEach(oct => {
   });
 });
 
-// ======== Estado de gravação ========
+// Estado de gravação
 let mediaRecorder, stream, isRecording = false;
-
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
-function resetKeys(){ Object.values(keys).forEach(k=>k.classList.remove("active")); }
+function resetKeys(){ Object.values(keys).forEach(k=>k.style.filter="brightness(0.2)"); }
 
-// ======== Atualiza teclado e display ========
-function highlightNote(note, magnitude, level){
+// Atualiza teclado e display
+function highlightNote(note, normalizedMag){
   resetKeys();
   if(!note || note==="PAUSA"){
     noteDisplay.textContent = "PAUSA";
     noteDisplay.style.background="#222";
+    magnitudeDisplay.textContent="Magnitude: 0";
   } else {
     const keyEl = keys[note];
-    if(keyEl) keyEl.classList.add("active");
+    if(keyEl) keyEl.style.filter = `brightness(${0.2 + 0.8*normalizedMag})`;
     noteDisplay.textContent = note;
-  }
-  magnitudeDisplay.textContent = "Magnitude: " + Math.round(magnitude);
+    magnitudeDisplay.textContent="Magnitude: "+normalizedMag.toFixed(2);
 
-  // Cor do display conforme nível
-  if(level==="low"){ noteDisplay.style.background="#333"; magnitudeDisplay.style.color="#aaa"; }
-  else if(level==="medium"){ noteDisplay.style.background="#555"; magnitudeDisplay.style.color="#ffa500"; }
-  else { noteDisplay.style.background="#f00"; magnitudeDisplay.style.color="#f00"; }
+    // Display central proporcional
+    const bgVal = 34 + 221*normalizedMag;
+    const r = Math.round(bgVal);
+    noteDisplay.style.background = `rgb(${r}, ${r/2}, ${r/2})`;
+  }
 }
 
-// ======== Enviar áudio para backend ========
+// Enviar áudio para backend
 async function enviarAudio(blob){
   const formData = new FormData();
   formData.append("audio", blob, "audio.webm");
   try {
     const res = await fetch("/upload",{method:"POST", body: formData});
     const data = await res.json();
-    highlightNote(data.dominantNote, data.magnitude, data.level);
+    highlightNote(data.dominantNote, data.magnitude);
   } catch(err){
     console.error(err);
     noteDisplay.textContent="Erro";
@@ -149,7 +120,7 @@ async function enviarAudio(blob){
   }
 }
 
-// ======== Gravação contínua ========
+// Gravação contínua
 async function gravarEProcessar(){
   while(isRecording){
     mediaRecorder.start();
@@ -162,7 +133,7 @@ async function gravarEProcessar(){
   }
 }
 
-// ======== Botões ========
+// Botões
 startBtn.onclick = async ()=>{
   try {
     stream = await navigator.mediaDevices.getUserMedia({audio:true});
