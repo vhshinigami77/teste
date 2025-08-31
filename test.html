@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Detector de Notas </title>
+  <title>Detector de Notas</title>
   <style>
+    /* ====== Corpo ====== */
     body {
       background: #111;
       color: #fff;
@@ -12,6 +13,22 @@
       padding: 20px;
     }
 
+    /* ====== Botões ====== */
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      opacity: 0.3;
+      transition: opacity 0.3s ease;
+    }
+    button:enabled { opacity: 1; }
+    #startBtn { background: #4caf50; color: white; }
+    #stopBtn { background: #f44336; color: white; }
+
+    /* ====== Teclado ====== */
     .keyboards {
       display: flex;
       flex-direction: column;
@@ -41,25 +58,21 @@
       text-align: center;
     }
 
-    .active {
-      opacity: 1;
-      box-shadow: 0 0 20px #fff;
-      transform: scale(1.1);
-    }
-
+    /* ====== Cores das teclas ====== */
     .C { background: #4fc3f7; }
     .Csharp { background: #26a69a; }
     .D { background: #66bb6a; }
     .Dsharp { background: #8bc34a; }
-    .E { background: #dce775; color: #000; }
+    .E { background: #dce775; color:#000; }
     .F { background: #ffb74d; }
-    .Fsharp { background: #ff8a65; }
-    .G { background: #ef5350; }
-    .Gsharp { background: #ba68c8; }
-    .A { background: #9575cd; }
-    .Asharp { background: #7986cb; }
-    .B { background: #64b5f6; }
+    .Fsharp { background:#ff8a65; }
+    .G { background:#ef5350; }
+    .Gsharp { background:#ba68c8; }
+    .A { background:#9575cd; }
+    .Asharp { background:#7986cb; }
+    .B { background:#64b5f6; }
 
+    /* ====== Display de nota ====== */
     .note-display {
       margin-top: 20px;
       font-size: 28px;
@@ -69,33 +82,17 @@
       background: #222;
       display: inline-block;
       box-shadow: 0 0 10px #000;
-      transition: background 0.3s ease;
+      transition: all 0.3s ease;
     }
-
-    button {
-      margin: 5px;
-      padding: 10px 20px;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      opacity: 0.3;
-      transition: opacity 0.3s ease;
-    }
-
-    button:enabled {
-      opacity: 1;
-    }
-
-    #startBtn { background: #4caf50; color: white; }
-    #stopBtn { background: #f44336; color: white; }
   </style>
 </head>
-<body>
 
+<body>
+  <!-- ====== Botões ====== -->
   <button id="startBtn">Iniciar</button>
   <button id="stopBtn" disabled>Parar</button>
 
+  <!-- ====== Teclado ====== -->
   <div class="keyboards">
     <div class="keyboard" id="octave4">
       <div class="key C" data-note="C4">C4</div>
@@ -111,7 +108,6 @@
       <div class="key Asharp" data-note="A#4">A#4 / Bb4</div>
       <div class="key B" data-note="B4">B4</div>
     </div>
-
     <div class="keyboard" id="octave5">
       <div class="key C" data-note="C5">C5</div>
       <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
@@ -128,39 +124,56 @@
     </div>
   </div>
 
+  <!-- ====== Display ====== -->
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
 
+  <!-- ====== JavaScript ====== -->
   <script>
-    let mediaRecorder;
-    let isRecording = false;
-    let stream;
-
+    // ====== Variáveis globais ======
+    let mediaRecorder, isRecording = false, stream;
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const noteDisplay = document.getElementById('noteDisplay');
     const keys = document.querySelectorAll('.key');
 
-    function delay(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
+    // ====== Funções utilitárias ======
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    function resetKeys() {
+      keys.forEach(k => {
+        k.classList.remove('active');
+        k.style.opacity = 0.2;
+        k.style.boxShadow = 'none';
+      });
+      noteDisplay.style.opacity = 0.2;
+      noteDisplay.style.boxShadow = '0 0 5px #fff';
     }
 
-    // ======================
-    // Função robusta de destaque
-    // ======================
-    function highlightNote(note, freq) {
-      keys.forEach(k => k.classList.remove('active'));
+    function highlightNote(note, freq, magnitude) {
+      resetKeys();
 
-      // Qualquer valor inválido ou que não corresponda a nota musical válida é tratado como PAUSA
+      // Determinar intensidade da iluminação
+      let opacity = 0.2, boxShadow = '0 0 5px #fff';
+      if (magnitude >= 0.6) { opacity = 1; boxShadow = '0 0 30px #fff'; }
+      else if (magnitude >= 0.2) { opacity = 0.6; boxShadow = '0 0 15px #fff'; }
+
       if (!note || typeof note !== 'string' || !note.match(/^[A-G]#?\d$/) || note === "PAUSA") {
         noteDisplay.textContent = "PAUSA";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
+        noteDisplay.style.opacity = opacity;
+        noteDisplay.style.boxShadow = boxShadow;
       } else {
         const keyEl = document.querySelector(`.key[data-note="${note}"]`);
         if (keyEl) {
           keyEl.classList.add('active');
+          keyEl.style.opacity = opacity;
+          keyEl.style.boxShadow = boxShadow;
+
           noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
           noteDisplay.style.color = window.getComputedStyle(keyEl).color;
+          noteDisplay.style.opacity = opacity;
+          noteDisplay.style.boxShadow = boxShadow;
         }
         noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz`;
       }
@@ -169,22 +182,23 @@
     async function enviarAudio(blob) {
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
-
       try {
         const response = await fetch('https://teste-fb8o.onrender.com/upload', {
           method: 'POST',
           body: formData
         });
         const data = await response.json();
-        highlightNote(data.dominantNote, data.dominantFrequency);
+        highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude);
       } catch (err) {
         console.error(err);
         noteDisplay.textContent = "Erro na análise";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
+        resetKeys();
       }
     }
 
+    // ====== Loop de gravação ======
     async function gravarEProcessar() {
       while (isRecording) {
         mediaRecorder.start();
@@ -197,6 +211,7 @@
       }
     }
 
+    // ====== Botões ======
     startBtn.onclick = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -218,8 +233,8 @@
 
     stopBtn.onclick = () => {
       isRecording = false;
-      mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop();
-      stream && stream.getTracks().forEach(track => track.stop());
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      if (stream) stream.getTracks().forEach(track => track.stop());
 
       startBtn.disabled = false;
       stopBtn.disabled = true;
@@ -227,7 +242,7 @@
       noteDisplay.textContent = "Gravação parada";
       noteDisplay.style.background = "#222";
       noteDisplay.style.color = "#fff";
-      keys.forEach(k => k.classList.remove('active'));
+      resetKeys();
     };
   </script>
 </body>
