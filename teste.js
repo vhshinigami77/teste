@@ -70,7 +70,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     // ==================
-    // Limiar e conversão
+    // Limiar e conversão de nota
     // ==================
     const limiar = 1000; // ignora ruídos fracos
     let note;
@@ -83,24 +83,31 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     // ==================
-    // Normalização baseada em RMS da janela + fator de escala
+    // Cálculo de intensidade em dB
     // ==================
     const rms = Math.sqrt(int16Samples.slice(0, N).reduce((sum, s) => sum + s*s, 0) / N);
-    let normalizedMagnitude = maxMag / (rms * N) * 10; // fator 10 para ajustar escala
-    normalizedMagnitude = Math.min(normalizedMagnitude, 1); // garante 0~1
+    let dB = 20 * Math.log10(rms / 32768); // referência 16-bit
+    if (!isFinite(dB)) dB = -100; // silêncio total
+
+    // Normaliza para 0~1 para frontend
+    const minDb = -60; // silêncio completo
+    const maxDb = -5;  // volume máximo típico
+    let intensity = (dB - minDb) / (maxDb - minDb);
+    intensity = Math.max(0, Math.min(1, intensity)); // garante 0~1
 
     // LOG
     console.log('============================');
     console.log(`dominantFrequency: ${peakFreq.toFixed(2)} Hz`);
     console.log(`dominantNote: ${note}`);
-    console.log(`normalizedMagnitude: ${normalizedMagnitude.toFixed(2)}`);
+    console.log(`RMS dB: ${dB.toFixed(2)} dB`);
+    console.log(`intensity (0~1): ${intensity.toFixed(2)}`);
     console.log('============================');
 
     // Envia resposta JSON
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: normalizedMagnitude
+      magnitude: intensity // agora intensity controla brilho/opacidade
     });
 
     // Remove arquivos temporários
