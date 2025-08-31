@@ -71,7 +71,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     // ==================
-    // Limiar e conversão
+    // Limiar e conversão para nota
     // ==================
     const limiar = 2e-3;
     let note;
@@ -84,9 +84,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     // ==================
-    // Normalização baseada no pico real do áudio
+    // Normalização de maxMag para 0..1
     // ==================
-    const peakSample = Math.max(...int16Samples.slice(0, N).map(s => Math.abs(s))) || 1; // evita divisão por 0
+    const peakSample = Math.max(...int16Samples.slice(0, N).map(s => Math.abs(s))) || 1;
     const normalizedMagnitude = maxMag / (peakSample * N);
 
     // LOG
