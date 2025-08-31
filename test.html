@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <title>Detector de Notas</title>
   <style>
-    /* ===== Corpo ===== */
     body {
       background: #111;
       color: #fff;
@@ -13,7 +12,6 @@
       padding: 20px;
     }
 
-    /* ===== Botões ===== */
     button {
       margin: 5px;
       padding: 10px 20px;
@@ -28,7 +26,6 @@
     #startBtn { background: #4caf50; color: white; }
     #stopBtn { background: #f44336; color: white; }
 
-    /* ===== Teclado ===== */
     .keyboards {
       display: flex;
       flex-direction: column;
@@ -56,7 +53,6 @@
       text-align: center;
     }
 
-    /* ===== Cores das teclas ===== */
     .C { background: #4fc3f7; }
     .Csharp { background: #26a69a; }
     .D { background: #66bb6a; }
@@ -70,7 +66,6 @@
     .Asharp { background: #7986cb; }
     .B { background: #64b5f6; }
 
-    /* ===== Display central ===== */
     .note-display {
       margin-top: 20px;
       font-size: 28px;
@@ -83,7 +78,6 @@
       transition: all 0.3s ease;
     }
 
-    /* ===== Barra de magnitude ===== */
     .magnitude-bar-container {
       width: 300px;
       height: 20px;
@@ -103,11 +97,9 @@
 
 <body>
 
-  <!-- ===== Botões de controle ===== -->
   <button id="startBtn">Iniciar</button>
   <button id="stopBtn" disabled>Parar</button>
 
-  <!-- ===== Teclado virtual ===== -->
   <div class="keyboards">
     <div class="keyboard" id="octave4">
       <div class="key C" data-note="C4">C4</div>
@@ -140,17 +132,13 @@
     </div>
   </div>
 
-  <!-- ===== Display central ===== -->
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
 
-  <!-- ===== Barra de magnitude ===== -->
   <div class="magnitude-bar-container">
     <div id="magnitudeBar"></div>
   </div>
 
-  <!-- ===== JavaScript ===== -->
   <script>
-    // ===== Variáveis globais =====
     let mediaRecorder;
     let isRecording = false;
     let stream;
@@ -160,10 +148,8 @@
     const magnitudeBar = document.getElementById('magnitudeBar');
     const keys = document.querySelectorAll('.key');
 
-    // ===== Função delay =====
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    // ===== Reset visual do teclado e display =====
     function resetKeys() {
       keys.forEach(k => { 
         k.classList.remove('active'); 
@@ -175,17 +161,17 @@
       magnitudeBar.style.width = '0%';
     }
 
-    // ===== Destacar nota no teclado e display =====
     function highlightNote(note, freq, magnitude) {
+      // magnitude agora é intensity 0~1
       resetKeys();
 
-      // Determinar intensidade com base na magnitude
       let opacity = 0.2;
       let boxShadow = '0 0 5px #fff';
-      if (magnitude >= 0.6) { opacity = 1; boxShadow = '0 0 30px #fff'; }
-      else if (magnitude >= 0.2) { opacity = 0.6; boxShadow = '0 0 15px #fff'; }
 
-      // Se PAUSA ou valor inválido
+      if (magnitude >= 0.7) { opacity = 1; boxShadow = '0 0 30px #fff'; }
+      else if (magnitude >= 0.3) { opacity = 0.6; boxShadow = '0 0 15px #fff'; }
+      else if (magnitude > 0) { opacity = 0.4; boxShadow = '0 0 10px #fff'; }
+
       if (!note || typeof note !== 'string' || !note.match(/^[A-G]#?\d$/) || note === "PAUSA") {
         noteDisplay.textContent = `PAUSA - Mag: ${magnitude.toFixed(2)}`;
         noteDisplay.style.background = "#222";
@@ -193,7 +179,6 @@
         noteDisplay.style.opacity = opacity;
         noteDisplay.style.boxShadow = boxShadow;
       } else {
-        // Destacar tecla correspondente
         const keyEl = document.querySelector(`.key[data-note="${note}"]`);
         if (keyEl) {
           keyEl.classList.add('active');
@@ -208,11 +193,9 @@
         noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz - Mag: ${magnitude.toFixed(2)}`;
       }
 
-      // Atualizar barra de magnitude
       magnitudeBar.style.width = `${Math.min(magnitude,1)*100}%`;
     }
 
-    // ===== Enviar áudio para o backend =====
     async function enviarAudio(blob) {
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
@@ -233,7 +216,6 @@
       }
     }
 
-    // ===== Loop de gravação e envio =====
     async function gravarEProcessar() {
       while (isRecording) {
         mediaRecorder.start();
@@ -246,7 +228,6 @@
       }
     }
 
-    // ===== Botão Iniciar =====
     startBtn.onclick = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -267,7 +248,6 @@
       }
     };
 
-    // ===== Botão Parar =====
     stopBtn.onclick = () => {
       isRecording = false;
       if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
