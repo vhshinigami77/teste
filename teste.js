@@ -9,96 +9,83 @@ import cors from 'cors';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
-// Criação do app Express
+// App Express
 const app = express();
-app.use(cors()); // Permite chamadas do front-end
+app.use(cors()); // permitir chamadas do front-end
 
-// Configura o multer para salvar arquivos temporários em "uploads/"
+// Upload temporário em "uploads/"
 const upload = multer({ dest: 'uploads/' });
 
-// Ajuste para __dirname e __filename em ES Modules
+// Suporte a __dirname/__filename em ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ========================
-// Função: converte frequência → nota musical
+// Conversão frequência → nota
 // ========================
 function frequencyToNoteCStyle(freq) {
   if (!freq || freq <= 0 || isNaN(freq)) return 'PAUSA';
 
-  // Notas dentro de uma oitava
   const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-  // Calcula índice relativo ao A4 = 440Hz
-  const n = 12 * Math.log2(freq / 440);
+  const n = 12 * Math.log2(freq / 440);   // semitons relativos a A4=440Hz
   const q = Math.floor(Math.round(n + 9) / 12);
   const r = Math.round(n + 9) % 12;
-
   return `${NOTES[r]}${4 + q}`;
 }
 
 // ========================
-// Rota principal: upload e análise
+// Rota: POST /upload
+// - Recebe webm/opus do browser
+// - Converte para WAV 44.1kHz mono
+// - Executa DFT manual 16..1048 Hz (passo 2Hz)
+// - Retorna nota, frequência dominante e magnitude absoluta da dominante
 // ========================
 app.post('/upload', upload.single('audio'), async (req, res) => {
   try {
-    const inputPath = req.file.path;       // Arquivo enviado (webm)
-    const outputPath = `${inputPath}.wav`; // Arquivo convertido para WAV
+    const inputPath = req.file.path;        // arquivo enviado (webm)
+    const outputPath = `${inputPath}.wav`;  // arquivo convertido
 
-    // Conversão para WAV mono 44.1kHz via ffmpeg
+    // Converte via ffmpeg (certifique-se que ffmpeg está instalado no ambiente)
     execSync(`ffmpeg -i ${inputPath} -ar 44100 -ac 1 ${outputPath}`);
 
-    // Leitura dos dados binários
+    // Lê WAV como bytes e extrai amostras int16
     const buffer = fs.readFileSync(outputPath);
-    const headerSize = 44;    // Cabeçalho WAV
+    const headerSize = 44;
     const sampleRate = 44100;
     const int16Samples = [];
-
-    // Extrai amostras 16 bits little-endian
     for (let i = headerSize; i < buffer.length; i += 2) {
-      const sample = buffer.readInt16LE(i);
-      int16Samples.push(sample);
+      int16Samples.push(buffer.readInt16LE(i));
     }
 
-    // ========================
-    // DFT manual (janela de 1s)
-    // ========================
-    const windowSize = sampleRate;                // 1 segundo
+    // --------- DFT manual ----------
+    const windowSize = sampleRate;                 // 1s de janela
     const N = Math.min(windowSize, int16Samples.length);
-    const freqStep = 2;                           // passo de 2 Hz
+    const freqStep = 2;
     const minFreq = 16;
     const maxFreq = 1048;
 
-    let maxMag = 0;   // magnitude máxima encontrada
-    let peakFreq = 0; // frequência correspondente
+    let maxMag = 0;
+    let peakFreq = 0;
     let peakIndex = -1;
 
-    // Varre frequências de interesse
-    for (let i = 0, freq = minFreq; freq <= maxFreq; freq += freqStep, i++) {
-      let real = 0;
-      let imag = 0;
-
-      // Soma DFT
+    for (let i = 0, f = minFreq; f <= maxFreq; f += freqStep, i++) {
+      let real = 0, imag = 0;
       for (let n = 0; n < N; n++) {
-        const angle = (2 * Math.PI * freq * n) / sampleRate;
+        const angle = (2 * Math.PI * f * n) / sampleRate;
         real += int16Samples[n] * Math.cos(angle);
         imag -= int16Samples[n] * Math.sin(angle);
       }
+      const mag = Math.hypot(real, imag); // magnitude
 
-      const magnitude = Math.sqrt(real * real + imag * imag);
-
-      // Guarda o pico
-      if (magnitude > maxMag) {
-        maxMag = magnitude;
-        peakFreq = freq;
+      if (mag > maxMag) {
+        maxMag = mag;
+        peakFreq = f;
         peakIndex = i;
       }
     }
 
-    // ========================
-    // Detecção de nota ou pausa
-    // ========================
-    const limiar = 2e-3; // limiar mínimo
+    // --------- Nota ou pausa ----------
+    const limiar = 2e-3; // limiar bem baixo; como estamos no inteiro 16-bit, normalmente maxMag >> limiar
     let note;
     if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
       note = 'PAUSA';
@@ -107,10 +94,10 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       note = frequencyToNoteCStyle(peakFreq);
     }
 
-    // Salva a nota em arquivo texto (opcional)
+    // (Opcional) salva a nota num arquivo texto
     fs.writeFileSync('nota.txt', note);
 
-    // Logs de depuração
+    // Logs
     console.log('============================');
     console.log(`maxMag: ${maxMag.toFixed(2)}`);
     console.log(`peakIndex: ${peakIndex}`);
@@ -118,15 +105,15 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     console.log(`dominantNote: ${note}`);
     console.log('============================');
 
-    // Resposta JSON para o front-end
+    // Retorna APENAS a magnitude absoluta (sem normalizar),
+    // para o front-end ajustar a opacidade de forma adaptativa por sessão.
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: maxMag,     // magnitude da nota dominante
-      maxMagnitude: maxMag   // usado para normalização adaptativa
+      magnitude: maxMag
     });
 
-    // Limpa arquivos temporários
+    // Limpeza de temporários
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
   } catch (err) {
@@ -135,9 +122,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   }
 });
 
-// ==========================
-// Inicializa o servidor
-// ==========================
+// ========================
+// Inicialização do servidor
+// ========================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
