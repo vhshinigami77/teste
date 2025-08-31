@@ -14,6 +14,7 @@
     .Fsharp { background: #ff8a65; } .G { background: #ef5350; } .Gsharp { background: #ba68c8; } 
     .A { background: #9575cd; } .Asharp { background: #7986cb; } .B { background: #64b5f6; }
     .note-display { margin-top: 20px; font-size: 28px; font-weight: bold; padding: 10px 20px; border-radius: 10px; background: #222; display: inline-block; box-shadow: 0 0 10px #000; transition: background 0.3s ease; }
+    .magnitude-display { margin-top: 5px; font-size: 18px; color: #ccc; }
     button { margin: 5px; padding: 10px 20px; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; opacity: 0.3; transition: opacity 0.2s ease; }
     button:enabled { opacity: 1; }
     #startBtn { background: #4caf50; color: white; }
@@ -57,37 +58,40 @@
   </div>
 
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
+  <div class="magnitude-display" id="magnitudeDisplay">Magnitude: 0</div>
 
   <script>
     let mediaRecorder, isRecording=false, stream;
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const noteDisplay = document.getElementById('noteDisplay');
+    const magnitudeDisplay = document.getElementById('magnitudeDisplay');
     const keys = document.querySelectorAll('.key');
 
     function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     function highlightNote(note, freq, magnitude) {
-      // Remove destaque das teclas
       keys.forEach(k => { k.classList.remove('active'); k.style.opacity=''; k.style.boxShadow='none'; });
 
-      // Detecta PAUSA
-      if (!note || note === "PAUSA" || magnitude === 0) {
+      // Usa diretamente a nota do backend para decidir PAUSA
+      if (note === "PAUSA") {
         noteDisplay.textContent = "PAUSA";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
+        magnitudeDisplay.textContent = "Magnitude: 0";
         return;
       }
 
-      // Define opacidade de acordo com magnitude (três faixas)
+      // Normaliza magnitude
+      const MAG_MAX = 1e7; 
+      let normalized = magnitude / MAG_MAX;
+      normalized = Math.min(normalized, 1);
+
+      // Define opacidade de acordo com magnitude normalizada (3 faixas)
       let opacity;
-      if (magnitude < 1000) {
-        opacity = 0.3; // baixo
-      } else if (magnitude < 5000) {
-        opacity = 0.6; // médio
-      } else {
-        opacity = 1;   // alto
-      }
+      if (normalized < 0.3) opacity = 0.3;     
+      else if (normalized < 0.7) opacity = 0.6; 
+      else opacity = 1;                         
 
       const keyEl = document.querySelector(`.key[data-note="${note}"]`);
       if (keyEl) {
@@ -98,6 +102,8 @@
         noteDisplay.style.color = window.getComputedStyle(keyEl).color;
         noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz`;
       }
+
+      magnitudeDisplay.textContent = `Magnitude: ${magnitude} (normalizada: ${normalized.toFixed(2)})`;
     }
 
     async function enviarAudio(blob) {
@@ -112,6 +118,7 @@
         noteDisplay.textContent = "Erro na análise";
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
+        magnitudeDisplay.textContent = "Magnitude: 0";
       }
     }
 
@@ -152,6 +159,7 @@
       noteDisplay.textContent="Gravação parada";
       noteDisplay.style.background="#222";
       noteDisplay.style.color="#fff";
+      magnitudeDisplay.textContent = "Magnitude: 0";
       keys.forEach(k=>{ k.classList.remove('active'); k.style.opacity=''; });
     };
   </script>
