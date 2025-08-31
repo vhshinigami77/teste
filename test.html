@@ -48,25 +48,11 @@
     align-items: center;
     font-weight: bold;
     font-size: 13px;
-    text-align: center;
+    opacity: 0.2;
     transition: all 0.3s ease;
-    color: #000;
-    filter: brightness(0.2); /* brilho mínimo inicial */
+    text-align: center;
   }
-
-  /* Cores originais das teclas */
-  .C { background: #4fc3f7; }
-  .Csharp { background: #26a69a; }
-  .D { background: #66bb6a; }
-  .Dsharp { background: #8bc34a; }
-  .E { background: #dce775; }
-  .F { background: #ffb74d; }
-  .Fsharp { background: #ff8a65; }
-  .G { background: #ef5350; }
-  .Gsharp { background: #ba68c8; }
-  .A { background: #9575cd; }
-  .Asharp { background: #7986cb; }
-  .B { background: #64b5f6; }
+  .active { opacity: 1; box-shadow: 0 0 20px #fff; transform: scale(1.1); }
 
   .note-display {
     margin-top: 20px;
@@ -77,7 +63,7 @@
     background: #222;
     display: inline-block;
     box-shadow: 0 0 10px #000;
-    transition: background 0.3s ease, color 0.3s ease;
+    transition: background 0.3s ease;
   }
 
   #magnitudeDisplay {
@@ -124,37 +110,27 @@ octaves.forEach(oct => {
 
 // ======== Estado de gravação ========
 let mediaRecorder, stream, isRecording = false;
-function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
-// ======== Resetar teclas ========
-function resetKeys(){
-  Object.values(keys).forEach(k => {
-    k.style.filter = "brightness(0.2)";
-  });
-}
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function resetKeys(){ Object.values(keys).forEach(k=>k.classList.remove("active")); }
 
 // ======== Atualiza teclado e display ========
-function highlightNote(note, normalizedMag){
+function highlightNote(note, magnitude, level){
   resetKeys();
-  
   if(!note || note==="PAUSA"){
     noteDisplay.textContent = "PAUSA";
     noteDisplay.style.background="#222";
-    magnitudeDisplay.textContent="Magnitude: 0";
   } else {
     const keyEl = keys[note];
-    if(keyEl){
-      const brightness = 0.2 + 0.8 * normalizedMag; // brilho proporcional
-      keyEl.style.filter = `brightness(${brightness})`;
-    }
+    if(keyEl) keyEl.classList.add("active");
     noteDisplay.textContent = note;
-    magnitudeDisplay.textContent="Magnitude: "+normalizedMag.toFixed(2);
-
-    // Display central também proporcional
-    const bgVal = 34 + 221*normalizedMag; // 34~255
-    const r = Math.round(bgVal);
-    noteDisplay.style.background = `rgb(${r}, ${r/2}, ${r/2})`;
   }
+  magnitudeDisplay.textContent = "Magnitude: " + Math.round(magnitude);
+
+  // Cor do display conforme nível
+  if(level==="low"){ noteDisplay.style.background="#333"; magnitudeDisplay.style.color="#aaa"; }
+  else if(level==="medium"){ noteDisplay.style.background="#555"; magnitudeDisplay.style.color="#ffa500"; }
+  else { noteDisplay.style.background="#f00"; magnitudeDisplay.style.color="#f00"; }
 }
 
 // ======== Enviar áudio para backend ========
@@ -164,7 +140,7 @@ async function enviarAudio(blob){
   try {
     const res = await fetch("/upload",{method:"POST", body: formData});
     const data = await res.json();
-    highlightNote(data.dominantNote, data.magnitude);
+    highlightNote(data.dominantNote, data.magnitude, data.level);
   } catch(err){
     console.error(err);
     noteDisplay.textContent="Erro";
@@ -216,5 +192,6 @@ stopBtn.onclick = ()=>{
   resetKeys();
 };
 </script>
+
 </body>
 </html>
