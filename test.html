@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <title>Detector de Notas </title>
   <style>
+    /* ======================
+       Estilo da página
+    ====================== */
     body {
       background: #111;
       color: #fff;
@@ -12,6 +15,7 @@
       padding: 20px;
     }
 
+    /* Contêiner dos teclados */
     .keyboards {
       display: flex;
       flex-direction: column;
@@ -20,6 +24,7 @@
       max-width: 1000px;
     }
 
+    /* Linha de teclas */
     .keyboard {
       display: flex;
       justify-content: center;
@@ -27,6 +32,7 @@
       gap: 4px;
     }
 
+    /* Estilo base da tecla */
     .key {
       width: 55px;
       height: 70px;
@@ -36,17 +42,18 @@
       align-items: center;
       font-weight: bold;
       font-size: 13px;
-      opacity: 0.2;
+      opacity: 0.2;              /* Opacidade baixa quando "inativa" */
       transition: all 0.3s ease;
       text-align: center;
     }
 
+    /* Quando ativa, aumenta a opacidade e escala */
     .active {
       opacity: 1;
-      box-shadow: 0 0 20px #fff;
       transform: scale(1.1);
     }
 
+    /* Cores das teclas */
     .C { background: #4fc3f7; }
     .Csharp { background: #26a69a; }
     .D { background: #66bb6a; }
@@ -60,6 +67,7 @@
     .Asharp { background: #7986cb; }
     .B { background: #64b5f6; }
 
+    /* Área de exibição da nota detectada */
     .note-display {
       margin-top: 20px;
       font-size: 28px;
@@ -72,6 +80,7 @@
       transition: background 0.3s ease;
     }
 
+    /* Estilo dos botões */
     button {
       margin: 5px;
       padding: 10px 20px;
@@ -79,12 +88,12 @@
       border: none;
       border-radius: 6px;
       cursor: pointer;
-      opacity: 0.3;
+      opacity: 0.3;               /* desativado */
       transition: opacity 0.3s ease;
     }
 
     button:enabled {
-      opacity: 1;
+      opacity: 1;                 /* ativado */
     }
 
     #startBtn { background: #4caf50; color: white; }
@@ -93,10 +102,13 @@
 </head>
 <body>
 
+  <!-- Botões de controle -->
   <button id="startBtn">Iniciar</button>
   <button id="stopBtn" disabled>Parar</button>
 
+  <!-- Teclado virtual (duas oitavas) -->
   <div class="keyboards">
+    <!-- Oitava 4 -->
     <div class="keyboard" id="octave4">
       <div class="key C" data-note="C4">C4</div>
       <div class="key Csharp" data-note="C#4">C#4 / Db4</div>
@@ -112,6 +124,7 @@
       <div class="key B" data-note="B4">B4</div>
     </div>
 
+    <!-- Oitava 5 -->
     <div class="keyboard" id="octave5">
       <div class="key C" data-note="C5">C5</div>
       <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
@@ -128,6 +141,7 @@
     </div>
   </div>
 
+  <!-- Exibição da nota atual -->
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
 
   <script>
@@ -140,17 +154,23 @@
     const noteDisplay = document.getElementById('noteDisplay');
     const keys = document.querySelectorAll('.key');
 
+    // Utilitário de delay (pausa assíncrona)
     function delay(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    // ======================
-    // Função robusta de destaque
-    // ======================
-    function highlightNote(note, freq) {
-      keys.forEach(k => k.classList.remove('active'));
+    /**
+     * Destaca uma tecla de acordo com a nota detectada.
+     * O brilho depende da magnitude relativa (magnitude / maxMagnitude).
+     */
+    function highlightNote(note, freq, magnitude, maxMagnitude) {
+      // Limpa destaques anteriores
+      keys.forEach(k => {
+        k.classList.remove('active');
+        k.style.boxShadow = "none";
+      });
 
-      // Qualquer valor inválido ou que não corresponda a nota musical válida é tratado como PAUSA
+      // Caso "pausa"
       if (!note || typeof note !== 'string' || !note.match(/^[A-G]#?\d$/) || note === "PAUSA") {
         noteDisplay.textContent = "PAUSA";
         noteDisplay.style.background = "#222";
@@ -159,13 +179,29 @@
         const keyEl = document.querySelector(`.key[data-note="${note}"]`);
         if (keyEl) {
           keyEl.classList.add('active');
+
+          // Normalização adaptativa
+          let intensity = maxMagnitude > 0 ? magnitude / maxMagnitude : 0;
+          intensity = Math.min(1, intensity);
+
+          // Brilho proporcional
+          let glowSize = 20 + intensity * 50;
+          let glowOpacity = 0.3 + intensity * 0.7;
+
+          keyEl.style.boxShadow = `0 0 ${glowSize}px rgba(255,255,255,${glowOpacity})`;
+
+          // Caixa de exibição acompanha a cor da tecla
           noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
           noteDisplay.style.color = window.getComputedStyle(keyEl).color;
         }
+        // Mostra nota + frequência
         noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz`;
       }
     }
 
+    /**
+     * Envia o áudio gravado para o backend e trata resposta
+     */
     async function enviarAudio(blob) {
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
@@ -176,7 +212,7 @@
           body: formData
         });
         const data = await response.json();
-        highlightNote(data.dominantNote, data.dominantFrequency);
+        highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude, data.maxMagnitude);
       } catch (err) {
         console.error(err);
         noteDisplay.textContent = "Erro na análise";
@@ -185,18 +221,29 @@
       }
     }
 
+    /**
+     * Loop de gravação + envio + análise (1 segundo cada)
+     */
     async function gravarEProcessar() {
       while (isRecording) {
+        // Inicia a gravação
         mediaRecorder.start();
+
+        // Captura 1s de áudio
         const audioBlob = await new Promise(resolve => {
           mediaRecorder.ondataavailable = e => resolve(e.data);
           setTimeout(() => mediaRecorder.stop(), 1000);
         });
+
+        // Envia ao backend
         await enviarAudio(audioBlob);
+
+        // Intervalo antes da próxima gravação
         await delay(1000);
       }
     }
 
+    // Clique em "Iniciar"
     startBtn.onclick = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -216,6 +263,7 @@
       }
     };
 
+    // Clique em "Parar"
     stopBtn.onclick = () => {
       isRecording = false;
       mediaRecorder && mediaRecorder.state !== 'inactive' && mediaRecorder.stop();
