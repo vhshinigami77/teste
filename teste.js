@@ -5,8 +5,11 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
-import cors from "cors";
+import cors from "cors"; // ES Module import
 
+// ==========================
+// Configurações iniciais
+// ==========================
 const app = express();
 app.use(express.json());
 app.use(express.static("public"));
@@ -75,17 +78,13 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
     }
 
     // ==========================
-    // Normalização da magnitude
+    // Níveis de magnitude
     // ==========================
-    const maxReference = 32767 * N;        // Valor máximo teórico de int16
-    const normalizedMag = Math.min(maxMag / maxReference, 1); // 0 a 1
-
-    // ==========================
-    // Níveis de magnitude normalizados
-    // ==========================
+    const lowThreshold = maxMag * 0.3;
+    const midThreshold = maxMag * 0.6;
     let magnitudeLevel = "low";
-    if (normalizedMag > 0.6) magnitudeLevel = "high";
-    else if (normalizedMag > 0.3) magnitudeLevel = "medium";
+    if (maxMag > midThreshold) magnitudeLevel = "high";
+    else if (maxMag > lowThreshold) magnitudeLevel = "medium";
 
     // ==========================
     // Nota dominante
@@ -98,7 +97,7 @@ app.post("/upload", upload.single("audio"), async (req, res) => {
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: normalizedMag,  // Valor entre 0 e 1
+      magnitude: maxMag,
       level: magnitudeLevel
     });
 
