@@ -51,8 +51,8 @@
     opacity: 0.2;
     transition: all 0.3s ease;
     text-align: center;
+    color: #fff;
   }
-  .active { opacity: 1; box-shadow: 0 0 20px #fff; transform: scale(1.1); }
 
   .note-display {
     margin-top: 20px;
@@ -63,7 +63,7 @@
     background: #222;
     display: inline-block;
     box-shadow: 0 0 10px #000;
-    transition: background 0.3s ease;
+    transition: background 0.3s ease, color 0.3s ease;
   }
 
   #magnitudeDisplay {
@@ -110,27 +110,33 @@ octaves.forEach(oct => {
 
 // ======== Estado de gravação ========
 let mediaRecorder, stream, isRecording = false;
-
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
-function resetKeys(){ Object.values(keys).forEach(k=>k.classList.remove("active")); }
+function resetKeys(){ Object.values(keys).forEach(k=>k.style.opacity=0.2); }
 
 // ======== Atualiza teclado e display ========
-function highlightNote(note, magnitude, level){
+function highlightNote(note, normalizedMag){
   resetKeys();
+  
+  // Magnitude proporcional à intensidade (0.2 ~ 1)
+  const opacity = 0.2 + 0.8 * normalizedMag;
+  
   if(!note || note==="PAUSA"){
     noteDisplay.textContent = "PAUSA";
     noteDisplay.style.background="#222";
+    magnitudeDisplay.textContent = "Magnitude: 0";
   } else {
     const keyEl = keys[note];
-    if(keyEl) keyEl.classList.add("active");
+    if(keyEl){
+      keyEl.style.opacity = opacity;
+    }
     noteDisplay.textContent = note;
+    magnitudeDisplay.textContent = "Magnitude: " + normalizedMag.toFixed(2);
   }
-  magnitudeDisplay.textContent = "Magnitude: " + Math.round(magnitude);
 
-  // Cor do display conforme nível
-  if(level==="low"){ noteDisplay.style.background="#333"; magnitudeDisplay.style.color="#aaa"; }
-  else if(level==="medium"){ noteDisplay.style.background="#555"; magnitudeDisplay.style.color="#ffa500"; }
-  else { noteDisplay.style.background="#f00"; magnitudeDisplay.style.color="#f00"; }
+  // Display central também com intensidade proporcional
+  const bgVal = 34 + 221*normalizedMag; // 34~255
+  const r = Math.round(bgVal);
+  noteDisplay.style.background = `rgb(${r}, ${r/2}, ${r/2})`;
 }
 
 // ======== Enviar áudio para backend ========
@@ -140,7 +146,7 @@ async function enviarAudio(blob){
   try {
     const res = await fetch("/upload",{method:"POST", body: formData});
     const data = await res.json();
-    highlightNote(data.dominantNote, data.magnitude, data.level);
+    highlightNote(data.dominantNote, data.magnitude);
   } catch(err){
     console.error(err);
     noteDisplay.textContent="Erro";
@@ -192,6 +198,5 @@ stopBtn.onclick = ()=>{
   resetKeys();
 };
 </script>
-
 </body>
 </html>
