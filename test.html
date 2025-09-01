@@ -129,7 +129,7 @@
           // Limita a última nota (D6)
           if (oct === 6 && n !== 'C' && n !== 'C#' && n !== 'D') return;
           const keyDiv = document.createElement('div');
-          keyDiv.className = n.replace('#','sharp');
+          keyDiv.className = n.replace('#','sharp') + ' key';
           keyDiv.dataset.note = n+oct;
           keyDiv.textContent = n+oct + (n.includes('#') ? ` / ${n.replace('#','b')}${oct}` : '');
           keyboardDiv.appendChild(keyDiv);
