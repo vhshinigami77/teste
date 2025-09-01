@@ -1,3 +1,4 @@
+// backend.js
 import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
@@ -7,7 +8,7 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const app = express();
-app.use(cors());
+app.use(cors()); // Permite requisições cross-origin
 const upload = multer({ dest: 'uploads/' });
 
 const __filename = fileURLToPath(import.meta.url);
@@ -48,9 +49,9 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // ========================
     const windowSize = sampleRate; // 1 segundo
     const N = Math.min(windowSize, int16Samples.length);
-    const freqStep = 2;
-    const minFreq = 16;
-    const maxFreq = 1048;
+    const freqStep = 0.5;        // maior resolução
+    const minFreq = 261;          // C4
+    const maxFreq = 1175;         // D6
 
     let maxMag = 0;
     let peakFreq = 0;
