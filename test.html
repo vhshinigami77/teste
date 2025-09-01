@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Detector de Notas Expandido</title>
+  <title>Detector de Notas</title>
   <style>
     body {
       background: #111;
@@ -31,7 +31,7 @@
       flex-direction: column;
       gap: 20px;
       margin: 30px auto;
-      max-width: 1200px;
+      max-width: 1000px;
     }
     .keyboard {
       display: flex;
@@ -39,7 +39,6 @@
       flex-wrap: wrap;
       gap: 4px;
     }
-
     .key {
       width: 55px;
       height: 70px;
@@ -97,10 +96,41 @@
 </head>
 
 <body>
+
   <button id="startBtn">Iniciar</button>
   <button id="stopBtn" disabled>Parar</button>
 
-  <div class="keyboards" id="keyboards"></div>
+  <div class="keyboards">
+    <div class="keyboard" id="octave4">
+      <div class="key C" data-note="C4">C4</div>
+      <div class="key Csharp" data-note="C#4">C#4 / Db4</div>
+      <div class="key D" data-note="D4">D4</div>
+      <div class="key Dsharp" data-note="D#4">D#4 / Eb4</div>
+      <div class="key E" data-note="E4">E4</div>
+      <div class="key F" data-note="F4">F4</div>
+      <div class="key Fsharp" data-note="F#4">F#4 / Gb4</div>
+      <div class="key G" data-note="G4">G4</div>
+      <div class="key Gsharp" data-note="G#4">G#4 / Ab4</div>
+      <div class="key A" data-note="A4">A4</div>
+      <div class="key Asharp" data-note="A#4">A#4 / Bb4</div>
+      <div class="key B" data-note="B4">B4</div>
+    </div>
+
+    <div class="keyboard" id="octave5">
+      <div class="key C" data-note="C5">C5</div>
+      <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
+      <div class="key D" data-note="D5">D5</div>
+      <div class="key Dsharp" data-note="D#5">D#5 / Eb5</div>
+      <div class="key E" data-note="E5">E5</div>
+      <div class="key F" data-note="F5">F5</div>
+      <div class="key Fsharp" data-note="F#5">F#5 / Gb5</div>
+      <div class="key G" data-note="G5">G5</div>
+      <div class="key Gsharp" data-note="G#5">G#5 / Ab5</div>
+      <div class="key A" data-note="A5">A5</div>
+      <div class="key Asharp" data-note="A#5">A#5 / Bb5</div>
+      <div class="key B" data-note="B5">B5</div>
+    </div>
+  </div>
 
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
 
@@ -109,72 +139,45 @@
   </div>
 
   <script>
+    let mediaRecorder;
+    let isRecording = false;
+    let stream;
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const noteDisplay = document.getElementById('noteDisplay');
     const magnitudeBar = document.getElementById('magnitudeBar');
-    const keyboardsContainer = document.getElementById('keyboards');
+    const keys = document.querySelectorAll('.key');
 
-    const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    const START_OCTAVE = 3;
-    const END_OCTAVE = 6;
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    let mediaRecorder;
-    let isRecording = false;
-    let stream;
-
-    // ===========================
-    // Cria as teclas para todas as oitavas
-    // ===========================
-    function createKeyboards() {
-      for (let octave = START_OCTAVE; octave <= END_OCTAVE; octave++) {
-        const kbDiv = document.createElement('div');
-        kbDiv.classList.add('keyboard');
-        NOTES.forEach(note => {
-          const key = document.createElement('div');
-          key.classList.add('key');
-          if (note.includes('#')) key.classList.add('sharp');
-          key.classList.add(note.replace('#','sharp'));
-          key.dataset.note = `${note}${octave}`;
-          key.textContent = `${note}${octave}`;
-          kbDiv.appendChild(key);
-        });
-        keyboardsContainer.appendChild(kbDiv);
-      }
-    }
-
-    createKeyboards();
-
-    // ===========================
-    // Reset visual do teclado
-    // ===========================
     function resetKeys() {
-      document.querySelectorAll('.key').forEach(k => {
-        k.classList.remove('active');
-        k.style.opacity = 0.2;
-        k.style.boxShadow = 'none';
+      keys.forEach(k => { 
+        k.classList.remove('active'); 
+        k.style.opacity = 0.2; 
+        k.style.boxShadow = 'none'; 
       });
       noteDisplay.style.opacity = 0.2;
       noteDisplay.style.boxShadow = '0 0 5px #fff';
       magnitudeBar.style.width = '0%';
     }
 
-    // ===========================
-    // Destacar nota detectada
-    // ===========================
-    function highlightNote(note, freq, intensity) {
+    function highlightNote(note, freq, magnitude) {
+      // magnitude agora é intensity 0~1
       resetKeys();
 
       let opacity = 0.2;
       let boxShadow = '0 0 5px #fff';
-      if (intensity >= 0.7) { opacity = 1; boxShadow = '0 0 30px #fff'; }
-      else if (intensity >= 0.3) { opacity = 0.6; boxShadow = '0 0 15px #fff'; }
-      else if (intensity > 0) { opacity = 0.4; boxShadow = '0 0 10px #fff'; }
 
-      if (!note || note === 'PAUSA') {
-        noteDisplay.textContent = `PAUSA - Mag: ${intensity.toFixed(2)}`;
+      if (magnitude >= 0.7) { opacity = 1; boxShadow = '0 0 30px #fff'; }
+      else if (magnitude >= 0.3) { opacity = 0.6; boxShadow = '0 0 15px #fff'; }
+      else if (magnitude > 0) { opacity = 0.4; boxShadow = '0 0 10px #fff'; }
+
+      if (!note || typeof note !== 'string' || !note.match(/^[A-G]#?\d$/) || note === "PAUSA") {
+        noteDisplay.textContent = `PAUSA - Mag: ${magnitude.toFixed(2)}`;
         noteDisplay.style.background = "#222";
         noteDisplay.style.color = "#fff";
+        noteDisplay.style.opacity = opacity;
+        noteDisplay.style.boxShadow = boxShadow;
       } else {
         const keyEl = document.querySelector(`.key[data-note="${note}"]`);
         if (keyEl) {
@@ -184,18 +187,15 @@
 
           noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
           noteDisplay.style.color = window.getComputedStyle(keyEl).color;
+          noteDisplay.style.opacity = opacity;
+          noteDisplay.style.boxShadow = boxShadow;
         }
-        noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz - Mag: ${intensity.toFixed(2)}`;
+        noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz - Mag: ${magnitude.toFixed(2)}`;
       }
 
-      noteDisplay.style.opacity = opacity;
-      noteDisplay.style.boxShadow = boxShadow;
-      magnitudeBar.style.width = `${Math.min(intensity,1)*100}%`;
+      magnitudeBar.style.width = `${Math.min(magnitude,1)*100}%`;
     }
 
-    // ===========================
-    // Enviar áudio para backend
-    // ===========================
     async function enviarAudio(blob) {
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
@@ -216,11 +216,6 @@
       }
     }
 
-    // ===========================
-    // Loop de gravação
-    // ===========================
-    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
     async function gravarEProcessar() {
       while (isRecording) {
         mediaRecorder.start();
@@ -233,9 +228,6 @@
       }
     }
 
-    // ===========================
-    // Botões
-    // ===========================
     startBtn.onclick = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -250,7 +242,7 @@
         noteDisplay.style.color = "#fff";
 
         gravarEProcessar();
-      } catch(err) {
+      } catch (err) {
         alert('Erro ao acessar o microfone.');
         console.error(err);
       }
