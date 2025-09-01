@@ -48,7 +48,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // ========================
     const windowSize = sampleRate; // 1 segundo
     const N = Math.min(windowSize, int16Samples.length);
-    const freqStep = 2;
+    const freqStep = 0.5;
     const minFreq = 16;
     const maxFreq = 1048;
 
