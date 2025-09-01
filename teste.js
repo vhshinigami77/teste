@@ -25,6 +25,15 @@ function frequencyToNoteCStyle(freq) {
   return `${NOTES[r]}${4 + q}`;
 }
 
+// ========================
+// Função: interpolação parabólica
+// ========================
+function parabolicInterpolation(y0, y1, y2, binStep, peakIndex) {
+  const alpha = y0, beta = y1, gamma = y2;
+  const p = 0.5 * (alpha - gamma) / (alpha - 2 * beta + gamma);
+  return (peakIndex + p) * binStep; // frequência ajustada
+}
+
 app.use(express.static('public'));
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
@@ -44,16 +53,20 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     // ========================
-    // DFT manual
+    // DFT manual com interpolação parabólica
     // ========================
     const windowSize = sampleRate; // 1 segundo
     const N = Math.min(windowSize, int16Samples.length);
-    const freqStep = 2;
-    const minFreq = 16;
-    const maxFreq = 1048;
+
+    // Faixa de notas flauta soprano: C4 ~ D6 (~261 Hz a 1174 Hz)
+    const minFreq = 261;
+    const maxFreq = 1174;
+    const freqStep = 1; // passo menor para melhor precisão
 
     let maxMag = 0;
     let peakFreq = 0;
+    let peakIndex = 0;
+    const magnitudes = [];
 
     for (let freq = minFreq; freq <= maxFreq; freq += freqStep) {
       let real = 0, imag = 0;
@@ -63,10 +76,26 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
         imag -= int16Samples[n] * Math.sin(angle);
       }
       const magnitude = Math.sqrt(real*real + imag*imag);
+      magnitudes.push(magnitude);
+
       if (magnitude > maxMag) {
         maxMag = magnitude;
         peakFreq = freq;
+        peakIndex = magnitudes.length - 1;
       }
+    }
+
+    // ==================
+    // Interpolação parabólica
+    // ==================
+    if (peakIndex > 0 && peakIndex < magnitudes.length - 1) {
+      peakFreq = parabolicInterpolation(
+        magnitudes[peakIndex - 1],
+        magnitudes[peakIndex],
+        magnitudes[peakIndex + 1],
+        freqStep,
+        peakIndex
+      );
     }
 
     // ==================
@@ -107,7 +136,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: intensity // agora intensity controla brilho/opacidade
+      magnitude: intensity
     });
 
     // Remove arquivos temporários
