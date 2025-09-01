@@ -1,146 +1,126 @@
-// server.js
-import express from "express";
-import multer from "multer";
-import fs from "fs";
-import path from "path";
-import ffmpeg from "fluent-ffmpeg";
-import { fileURLToPath } from "url";
+import express from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import cors from 'cors';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
-// ==========================
-// Configuração inicial
-// ==========================
+const app = express();
+app.use(cors());
+const upload = multer({ dest: 'uploads/' });
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const upload = multer({ dest: "uploads/" });
-const PORT = process.env.PORT || 3000;
-
-// ==========================
-// Funções auxiliares
-// ==========================
-
-// Tabela de notas musicais
-const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
-/**
- * Converte frequência em nota musical + oitava
- * @param {number} frequency
- * @returns {string} Nota (ex: "C4")
- */
-function frequencyToNote(frequency) {
-  if (frequency <= 0) return "PAUSA";
-
-  const noteNumber = 12 * (Math.log2(frequency / 440)) + 69;
-  const noteIndex = Math.round(noteNumber) % 12;
-  const octave = Math.floor(noteNumber / 12) - 1; // 🔥 AJUSTADO: agora C4 = 261 Hz
-  return `${NOTES[noteIndex]}${octave}`;
+// ========================
+// Função: frequencyToNoteCStyle
+// ========================
+function frequencyToNoteCStyle(freq) {
+  if (!freq || freq <= 0 || isNaN(freq)) return 'PAUSA';
+  const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const n = 12 * Math.log2(freq / 440);
+  const q = Math.floor(Math.round(n + 9) / 12);
+  const r = Math.round(n + 9) % 12;
+  return `${NOTES[r]}${4 + q}`;
 }
 
-/**
- * Aplica DFT simplificada numa janela de 1 segundo
- * Frequências de 16 Hz a 1048 Hz com passo de 2 Hz
- */
-function analyzeDFT(samples, sampleRate) {
-  const N = samples.length;
-  const freqs = [];
-  const magnitudes = [];
+app.use(express.static('public'));
 
-  for (let f = 16; f <= 1048; f += 2) {
-    let real = 0;
-    let imag = 0;
+app.post('/upload', upload.single('audio'), async (req, res) => {
+  try {
+    const inputPath = req.file.path;
+    const outputPath = `${inputPath}.wav`;
 
-    for (let n = 0; n < N; n++) {
-      const angle = (-2 * Math.PI * f * n) / sampleRate;
-      real += samples[n] * Math.cos(angle);
-      imag += samples[n] * Math.sin(angle);
+    // Converte para WAV, mono, 44.1 kHz
+    execSync(`ffmpeg -i ${inputPath} -ar 44100 -ac 1 ${outputPath}`);
+
+    const buffer = fs.readFileSync(outputPath);
+    const headerSize = 44;
+    const sampleRate = 44100;
+    const int16Samples = [];
+    for (let i = headerSize; i < buffer.length; i += 2) {
+      int16Samples.push(buffer.readInt16LE(i));
     }
 
-    const mag = Math.sqrt(real * real + imag * imag);
-    freqs.push(f);
-    magnitudes.push(mag);
-  }
+    // ========================
+    // DFT manual
+    // ========================
+    const windowSize = sampleRate; // 1 segundo
+    const N = Math.min(windowSize, int16Samples.length);
+    const freqStep = 2;
+    const minFreq = 16;
+    const maxFreq = 1048;
 
-  // Acha o pico
-  let peakIndex = magnitudes.indexOf(Math.max(...magnitudes));
+    let maxMag = 0;
+    let peakFreq = 0;
 
-  // Interpolação parabólica para refinar a frequência
-  if (peakIndex > 0 && peakIndex < magnitudes.length - 1) {
-    const alpha = magnitudes[peakIndex - 1];
-    const beta = magnitudes[peakIndex];
-    const gamma = magnitudes[peakIndex + 1];
+    for (let freq = minFreq; freq <= maxFreq; freq += freqStep) {
+      let real = 0, imag = 0;
+      for (let n = 0; n < N; n++) {
+        const angle = (2 * Math.PI * freq * n) / sampleRate;
+        real += int16Samples[n] * Math.cos(angle);
+        imag -= int16Samples[n] * Math.sin(angle);
+      }
+      const magnitude = Math.sqrt(real*real + imag*imag);
+      if (magnitude > maxMag) {
+        maxMag = magnitude;
+        peakFreq = freq;
+      }
+    }
 
-    const correction = 0.5 * (alpha - gamma) / (alpha - 2 * beta + gamma);
-    peakIndex = peakIndex + correction;
-  }
+    // ==================
+    // Limiar e conversão de nota
+    // ==================
+    const limiar = 1000; // ignora ruídos fracos
+    let note;
+    if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
+      note = 'PAUSA';
+      peakFreq = 0;
+      maxMag = 0;
+    } else {
+      note = frequencyToNoteCStyle(peakFreq);
+    }
 
-  const dominantFrequency = freqs[Math.round(peakIndex)];
-  const magnitudeNorm = magnitudes[Math.round(peakIndex)] / Math.max(...magnitudes);
+    // ==================
+    // Cálculo de intensidade em dB
+    // ==================
+    const rms = Math.sqrt(int16Samples.slice(0, N).reduce((sum, s) => sum + s*s, 0) / N);
+    let dB = 20 * Math.log10(rms / 32768); // referência 16-bit
+    if (!isFinite(dB)) dB = -100; // silêncio total
 
-  return { dominantFrequency, magnitude: magnitudeNorm };
-}
+    // Normaliza para 0~1 para frontend
+    const minDb = -60; // silêncio completo
+    const maxDb = -5;  // volume máximo típico
+    let intensity = (dB - minDb) / (maxDb - minDb);
+    intensity = Math.max(0, Math.min(1, intensity)); // garante 0~1
 
-// ==========================
-// Rotas
-// ==========================
+    // LOG
+    console.log('============================');
+    console.log(`dominantFrequency: ${peakFreq.toFixed(2)} Hz`);
+    console.log(`dominantNote: ${note}`);
+    console.log(`RMS dB: ${dB.toFixed(2)} dB`);
+    console.log(`intensity (0~1): ${intensity.toFixed(2)}`);
+    console.log('============================');
 
-app.use(express.static("public"));
-
-app.post("/upload", upload.single("audio"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "Nenhum arquivo enviado" });
-  }
-
-  const inputPath = req.file.path;
-  const wavPath = path.join("uploads", `${Date.now()}.wav`);
-
-  // Converte para WAV PCM 44.1kHz
-  ffmpeg(inputPath)
-    .audioChannels(1)
-    .audioFrequency(44100)
-    .toFormat("wav")
-    .save(wavPath)
-    .on("end", () => {
-      // Lê o WAV em PCM
-      fs.readFile(wavPath, (err, buffer) => {
-        if (err) {
-          console.error("Erro ao ler WAV:", err);
-          return res.status(500).json({ error: "Erro ao processar áudio" });
-        }
-
-        // Extrai amostras PCM
-        const data = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-        const samples = [];
-        for (let i = 44; i < buffer.length; i += 2) {
-          const sample = data.getInt16(i, true);
-          samples.push(sample / 32768.0); // normaliza -1 a 1
-        }
-
-        // Análise espectral
-        const { dominantFrequency, magnitude } = analyzeDFT(samples, 44100);
-        const dominantNote = frequencyToNote(dominantFrequency);
-
-        // Resposta JSON
-        res.json({
-          dominantFrequency,
-          dominantNote,
-          magnitude,
-        });
-
-        // Limpeza
-        fs.unlinkSync(inputPath);
-        fs.unlinkSync(wavPath);
-      });
-    })
-    .on("error", (err) => {
-      console.error("Erro no FFmpeg:", err);
-      res.status(500).json({ error: "Erro ao converter áudio" });
+    // Envia resposta JSON
+    res.json({
+      dominantFrequency: peakFreq,
+      dominantNote: note,
+      magnitude: intensity // agora intensity controla brilho/opacidade
     });
+
+    // Remove arquivos temporários
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputPath);
+
+  } catch (err) {
+    console.error('Erro:', err);
+    res.status(500).json({ error: 'Erro na análise do áudio.' });
+  }
 });
 
-// ==========================
-// Inicializa servidor
-// ==========================
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
