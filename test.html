@@ -137,7 +137,7 @@
       <div class="key B" data-note="B5">B5</div>
     </div>
 
-    <!-- Oitava 6 (até D6 para flauta doce soprano) -->
+    <!-- Oitava 6 -->
     <div class="keyboard" id="octave6">
       <div class="key C" data-note="C6">C6</div>
       <div class="key Csharp" data-note="C#6">C#6 / Db6</div>
@@ -153,7 +153,80 @@
   </div>
 
   <script>
-    // Seu código JS atual (sem mudanças) aqui
+    let mediaRecorder;
+    let audioChunks = [];
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const noteDisplay = document.getElementById("noteDisplay");
+    const magnitudeBar = document.getElementById("magnitudeBar");
+    const keys = document.querySelectorAll(".key");
+
+    startBtn.addEventListener("click", async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) {
+          audioChunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(audioChunks, { type: "audio/webm" });
+        const formData = new FormData();
+        formData.append("audio", blob, "recording.webm");
+
+        const response = await fetch("https://teste-fb8o.onrender.com/upload", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await response.json();
+
+        // Atualiza a interface
+        updateUI(result);
+      };
+
+      mediaRecorder.start();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+
+      // Para automaticamente após 1 segundo (ajustável)
+      setTimeout(() => {
+        mediaRecorder.stop();
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      }, 1000);
+    });
+
+    stopBtn.addEventListener("click", () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    });
+
+    function updateUI(result) {
+      const { dominantNote, magnitude } = result;
+
+      // Reseta opacidade das teclas
+      keys.forEach(key => {
+        key.style.opacity = 0.2;
+      });
+
+      if (dominantNote && dominantNote !== "PAUSA") {
+        const activeKey = document.querySelector(`[data-note="${dominantNote}"]`);
+        if (activeKey) {
+          activeKey.style.opacity = magnitude;
+        }
+      }
+
+      noteDisplay.textContent = dominantNote || "Nenhuma nota";
+      magnitudeBar.style.width = `${(magnitude * 100).toFixed(0)}%`;
+    }
   </script>
 </body>
 </html>
