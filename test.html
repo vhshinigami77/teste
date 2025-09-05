@@ -92,6 +92,17 @@
       border-radius: 10px;
       transition: width 0.3s;
     }
+
+    .n-display {
+      margin-top: 10px;
+      font-size: 18px;
+      font-weight: bold;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: #222;
+      display: inline-block;
+      box-shadow: 0 0 5px #000;
+    }
   </style>
 </head>
 
@@ -103,44 +114,7 @@
   <button id="stopBtn" disabled>Parar</button>
 
   <div class="keyboards">
-    <!-- Oitava 4 -->
-    <div class="keyboard" id="octave4">
-      <div class="key C" data-note="C4">C4</div>
-      <div class="key Csharp" data-note="C#4">C#4 / Db4</div>
-      <div class="key D" data-note="D4">D4</div>
-      <div class="key Dsharp" data-note="D#4">D#4 / Eb4</div>
-      <div class="key E" data-note="E4">E4</div>
-      <div class="key F" data-note="F4">F4</div>
-      <div class="key Fsharp" data-note="F#4">F#4 / Gb4</div>
-      <div class="key G" data-note="G4">G4</div>
-      <div class="key Gsharp" data-note="G#4">G#4 / Ab4</div>
-      <div class="key A" data-note="A4">A4</div>
-      <div class="key Asharp" data-note="A#4">A#4 / Bb4</div>
-      <div class="key B" data-note="B4">B4</div>
-    </div>
-
-    <!-- Oitava 5 -->
-    <div class="keyboard" id="octave5">
-      <div class="key C" data-note="C5">C5</div>
-      <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
-      <div class="key D" data-note="D5">D5</div>
-      <div class="key Dsharp" data-note="D#5">D#5 / Eb5</div>
-      <div class="key E" data-note="E5">E5</div>
-      <div class="key F" data-note="F5">F5</div>
-      <div class="key Fsharp" data-note="F#5">F#5 / Gb5</div>
-      <div class="key G" data-note="G5">G5</div>
-      <div class="key Gsharp" data-note="G#5">G#5 / Ab5</div>
-      <div class="key A" data-note="A5">A5</div>
-      <div class="key Asharp" data-note="A#5">A#5 / Bb5</div>
-      <div class="key B" data-note="B5">B5</div>
-    </div>
-
-    <!-- Oitava 6 -->
-    <div class="keyboard" id="octave6">
-      <div class="key C" data-note="C6">C6</div>
-      <div class="key Csharp" data-note="C#6">C#6 / Db6</div>
-      <div class="key D" data-note="D6">D6</div>
-    </div>
+    <!-- teclas omitidas para encurtar, mantém igual ao seu -->
   </div>
 
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
@@ -148,6 +122,8 @@
   <div class="magnitude-bar-container">
     <div id="magnitudeBar"></div>
   </div>
+
+  <div class="n-display" id="nDisplay">n = --</div>
 
   <script>
     let mediaRecorder;
@@ -157,9 +133,8 @@
     const stopBtn = document.getElementById('stopBtn');
     const noteDisplay = document.getElementById('noteDisplay');
     const magnitudeBar = document.getElementById('magnitudeBar');
+    const nDisplay = document.getElementById('nDisplay');
     const keys = document.querySelectorAll('.key');
-
-    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     function resetKeys() {
       keys.forEach(k => { 
@@ -170,9 +145,10 @@
       noteDisplay.style.opacity = 0.2;
       noteDisplay.style.boxShadow = '0 0 5px #fff';
       magnitudeBar.style.width = '0%';
+      nDisplay.textContent = "n = --";
     }
 
-    function highlightNote(note, freq, magnitude) {
+    function highlightNote(note, freq, magnitude, nValue) {
       resetKeys();
 
       let opacity = 0.2;
@@ -204,6 +180,12 @@
       }
 
       magnitudeBar.style.width = `${Math.min(magnitude,1)*100}%`;
+
+      if (nValue !== null && !isNaN(nValue)) {
+        nDisplay.textContent = `n = ${nValue.toFixed(2)}`;
+      } else {
+        nDisplay.textContent = "n = --";
+      }
     }
 
     async function enviarAudio(blob) {
@@ -216,7 +198,7 @@
           body: formData
         });
         const data = await response.json();
-        highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude);
+        highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude, data.nValue);
       } catch(err) {
         console.error(err);
         noteDisplay.textContent = "Erro na análise";
@@ -231,10 +213,9 @@
         mediaRecorder.start();
         const audioBlob = await new Promise(resolve => {
           mediaRecorder.ondataavailable = e => resolve(e.data);
-          setTimeout(() => mediaRecorder.stop(), 500); // janela de 1s
+          setTimeout(() => mediaRecorder.stop(), 500);
         });
         await enviarAudio(audioBlob);
-        //await delay(500); // intervalo entre análises
       }
     }
 
