@@ -9,8 +9,8 @@ import { fileURLToPath } from 'url';
 const app = express();
 
 // CORS
-const app = express();
-app.use(cors());
+app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'], allowedHeaders:['Content-Type'] }));
+app.options('/upload', cors());
 
 const upload = multer({ dest: 'uploads/' });
 
