@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 // Função: frequencyToNoteCStyle
 // ========================
 function frequencyToNoteCStyle(freq) {
-  if (!freq || freq <= 0 || isNaN(freq)) return { note: 'PAUSA', n: null };
+  if (!freq || freq <= 0 || isNaN(freq)) return { note: 'PAUSA', n: null, q: null, r: null };
 
   const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const n = 12 * Math.log2(freq / 440);
@@ -25,7 +25,7 @@ function frequencyToNoteCStyle(freq) {
   const r = Math.round(n + 9) % 12;
   const note = `${NOTES[r]}${4 + q}`;
 
-  return { note, n };
+  return { note, n, q, r };
 }
 
 app.use(express.static('public'));
@@ -76,16 +76,20 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // Limiar e conversão de nota
     // ==================
     const limiar = 1000; // ignora ruídos fracos
-    let note, nValue;
+    let note, nValue, qValue, rValue;
     if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
       note = 'PAUSA';
       peakFreq = 0;
       maxMag = 0;
       nValue = null;
+      qValue = null;
+      rValue = null;
     } else {
       const result = frequencyToNoteCStyle(peakFreq);
       note = result.note;
       nValue = result.n;
+      qValue = result.q;
+      rValue = result.r;
     }
 
     // ==================
@@ -105,7 +109,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     console.log('============================');
     console.log(`dominantFrequency: ${peakFreq.toFixed(2)} Hz`);
     console.log(`dominantNote: ${note}`);
-    console.log(`n: ${nValue}`);
+    console.log(`n = ${nValue}, q = ${qValue}, r = ${rValue}`);
     console.log(`RMS dB: ${dB.toFixed(2)} dB`);
     console.log(`intensity (0~1): ${intensity.toFixed(2)}`);
     console.log('============================');
@@ -114,8 +118,10 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: intensity, // agora intensity controla brilho/opacidade
-      nValue: nValue
+      magnitude: intensity,
+      nValue: nValue,
+      qValue: qValue,
+      rValue: rValue
     });
 
     // Remove arquivos temporários
