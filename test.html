@@ -231,7 +231,7 @@
         mediaRecorder.start();
         const audioBlob = await new Promise(resolve => {
           mediaRecorder.ondataavailable = e => resolve(e.data);
-          setTimeout(() => mediaRecorder.stop(), 1000); // janela de 1s
+          setTimeout(() => mediaRecorder.stop(), 500); // janela de 1s
         });
         await enviarAudio(audioBlob);
         //await delay(500); // intervalo entre análises
