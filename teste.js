@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 
 const app = express();
 
-// CORS bem explícito (inclui OPTIONS)
+// CORS bem explícito
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -47,7 +47,7 @@ function hannWindowingRemoveDC(int16Array) {
   return out;
 }
 
-// DFT por varredura (passo em Hz). Usa recorrência de seno/cosseno p/ performance.
+// DFT varredura
 function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
   const N = signal.length;
   const freqs = [];
@@ -55,7 +55,6 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
 
   for (let f = fStart; f <= fEnd; f += stepHz) {
     const w = 2 * Math.PI * f / sampleRate;
-    // rotação incremental
     const cosStep = Math.cos(w);
     const sinStep = Math.sin(w);
     let cosPrev = 1;
@@ -68,7 +67,6 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
       real += x * cosPrev;
       imag -= x * sinPrev;
 
-      // avança o ângulo
       const cosNew = cosPrev * cosStep - sinPrev * sinStep;
       const sinNew = sinPrev * cosStep + cosPrev * sinStep;
       cosPrev = cosNew;
@@ -81,7 +79,7 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
   return { freqs, mags };
 }
 
-// Harmonic Product Spectrum (3 harmônicos por padrão)
+// Harmonic Product Spectrum
 function hps(mags, harmonics = 3) {
   const L = mags.length;
   const out = new Float32Array(L);
@@ -97,14 +95,14 @@ function hps(mags, harmonics = 3) {
   return out;
 }
 
-// Interpolação parabólica (3 pontos) para refinar o pico
+// Interpolação parabólica
 function refineParabolic(arr, idx, stepHz) {
   const y1 = arr[idx - 1] ?? arr[idx];
   const y2 = arr[idx];
   const y3 = arr[idx + 1] ?? arr[idx];
   const denom = (y1 - 2*y2 + y3);
   if (!isFinite(denom) || Math.abs(denom) < 1e-12) return idx * stepHz;
-  const delta = 0.5 * (y1 - y3) / denom; // deslocamento em "bins"
+  const delta = 0.5 * (y1 - y3) / denom;
   return (idx + delta) * stepHz;
 }
 
@@ -122,48 +120,38 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const headerSize = 44;
     const sampleRate = 44100;
 
-    // Lê int16
     const int16Samples = [];
     for (let i = headerSize; i + 1 < buffer.length; i += 2) {
       int16Samples.push(buffer.readInt16LE(i));
     }
 
-    // Janela de análise: usa tudo que veio, limitado a 1 s
-    const maxWindow = sampleRate; // 1.0 s
+    const maxWindow = sampleRate; // 1 s
     const N = Math.min(int16Samples.length, maxWindow);
     if (N < 2048) {
-      // Muito curto para análise estável
       fs.unlinkSync(inputPath); fs.unlinkSync(outputPath);
       return res.json({ dominantFrequency: 0, dominantNote: 'PAUSA', magnitude: 0 });
     }
 
-    // Pré-processamento: remove DC + Hann
     const x = hannWindowingRemoveDC(int16Samples.slice(0, N));
 
-    // Faixa da flauta doce: C4 (~262 Hz) até D6 (~1175 Hz)
-    const fMin = 240;   // um pouco abaixo de C4 para tolerância
-    const fMax = 1200;  // cobre até D6 confortável
-    const stepHz = 1;   // grade mais fina
+    // Faixa da flauta doce
+    const fMin = 240;
+    const fMax = 1200;
+    const stepHz = 1;
 
-    // Espectro por varredura
     const { freqs, mags } = magnitudeAtFrequencies(x, sampleRate, fMin, fMax, stepHz);
-
-    // HPS (3 harmônicos) para favorecer o fundamental
     const hpsArr = hps(mags, 3);
 
-    // Encontra pico em HPS
-    let peakIdxHps = 0;
+    let peakIdx = 0;
     let peakVal = -Infinity;
     for (let i = 0; i < hpsArr.length; i++) {
       if (hpsArr[i] > peakVal) {
         peakVal = hpsArr[i];
-        peakIdxHps = i;
+        peakIdx = i;
       }
     }
 
-    // Se nada apareceu (silêncio)
     if (!isFinite(peakVal) || peakVal <= 0) {
-      // intensidade ainda é útil p/ UI
       const rms = Math.sqrt(x.reduce((s, v) => s + v*v, 0) / x.length);
       let dB = 20 * Math.log10(rms / 32768);
       if (!isFinite(dB)) dB = -100;
@@ -175,40 +163,32 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       return res.json({ dominantFrequency: 0, dominantNote: 'PAUSA', magnitude: intensity });
     }
 
-    // Frequência correspondente ao pico do HPS
-    const fGrid = freqs[peakIdxHps];
-
-    // Índice correspondente em mags
-    const idxMag = Math.round((fGrid - fMin) / stepHz);
-    const safeIdxMag = Math.max(1, Math.min(mags.length - 2, idxMag));
-
-    // Refinamento parabólico usando mags
-    let fRefined = refineParabolic(mags, safeIdxMag, stepHz);
+    const fGrid = freqs[peakIdx];
+    let fRefined = refineParabolic(mags, peakIdx, stepHz);
     fRefined = Math.max(fMin, Math.min(fMax, fRefined));
 
-    // Checagem anti-oitava: compara pico em f e f/2
+    // Checagem anti-oitava reforçada
     const halfF = fRefined / 2;
     if (halfF >= fMin) {
       const halfIdx = Math.round((halfF - fMin) / stepHz);
       const safeIdx = Math.max(0, Math.min(mags.length - 1, halfIdx));
-      const ratio = mags[safeIdxMag] / (mags[safeIdx] + 1e-9);
-      if (ratio < 1.25) {
+      const ratio = mags[peakIdx] / (mags[safeIdx] + 1e-9);
+      if (ratio < 1.8) { // mais permissivo
         fRefined = halfF;
       }
     }
 
-    // Limiar relativo: rejeita ruído
+    // Limiar mais baixo
     const maxMag = Math.max(...mags);
-    const limiarRel = 0.12 * maxMag;
+    const limiarRel = 0.05 * maxMag; // 5% agora
     let note;
-    if (mags[safeIdxMag] < limiarRel || !isFinite(fRefined)) {
+    if (mags[peakIdx] < limiarRel || !isFinite(fRefined)) {
       note = 'PAUSA';
       fRefined = 0;
     } else {
       note = frequencyToNoteCStyle(fRefined);
     }
 
-    // Intensidade (em dB → 0..1) para o UI
     const rms = Math.sqrt(x.reduce((s, v) => s + v*v, 0) / x.length);
     let dB = 20 * Math.log10(rms / 32768);
     if (!isFinite(dB)) dB = -100;
@@ -217,7 +197,8 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     intensity = Math.max(0, Math.min(1, intensity));
 
     console.log('============================');
-    console.log(`dominantFrequency: ${fRefined.toFixed(2)} Hz (grid ${fGrid.toFixed(1)} Hz)`);
+    console.log(`grid candidate: ${fGrid.toFixed(1)} Hz`);
+    console.log(`refined frequency: ${fRefined.toFixed(2)} Hz`);
     console.log(`dominantNote: ${note}`);
     console.log(`RMS dB: ${dB.toFixed(2)} dB`);
     console.log(`intensity (0~1): ${intensity.toFixed(2)}`);
