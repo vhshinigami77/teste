@@ -7,19 +7,11 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const app = express();
-
-// CORS
-app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'], allowedHeaders: ['Content-Type'] }));
-app.options('/upload', cors());
-
+app.use(cors());
 const upload = multer({ dest: 'uploads/' });
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// =========================
-// Utils
-// =========================
 function frequencyToNoteCStyle(freq) {
   if (!freq || freq <= 0 || isNaN(freq)) return 'PAUSA';
   const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -46,26 +38,24 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
   const N = signal.length;
   const freqs = [];
   const mags  = [];
-
   for (let f = fStart; f <= fEnd; f += stepHz) {
     const w = 2 * Math.PI * f / sampleRate;
     const cosStep = Math.cos(w);
     const sinStep = Math.sin(w);
-    let cosPrev = 1, sinPrev = 0, real = 0, imag = 0;
-
+    let cosPrev = 1, sinPrev = 0;
+    let real = 0, imag = 0;
     for (let n = 0; n < N; n++) {
       const x = signal[n];
       real += x * cosPrev;
       imag -= x * sinPrev;
       const cosNew = cosPrev * cosStep - sinPrev * sinStep;
       const sinNew = sinPrev * cosStep + cosPrev * sinStep;
-      cosPrev = cosNew; sinPrev = sinNew;
+      cosPrev = cosNew;
+      sinPrev = sinNew;
     }
-
     freqs.push(f);
     mags.push(Math.hypot(real, imag));
   }
-
   return { freqs, mags };
 }
 
@@ -84,28 +74,22 @@ function hps(mags, harmonics = 3) {
   return out;
 }
 
-function refineParabolic(freqs, mags, idx) {
-  const y1 = mags[idx - 1] ?? mags[idx];
-  const y2 = mags[idx];
-  const y3 = mags[idx + 1] ?? mags[idx];
-  const denom = y1 - 2*y2 + y3;
-  if (!isFinite(denom) || Math.abs(denom) < 1e-12) return freqs[idx];
-  let delta = 0.5 * (y1 - y3) / denom;
-  delta = Math.max(-1, Math.min(1, delta));
-  return freqs[idx] + delta * (freqs[1] - freqs[0]);
+function refineParabolic(arr, idx, stepHz) {
+  const y1 = arr[idx - 1] ?? arr[idx];
+  const y2 = arr[idx];
+  const y3 = arr[idx + 1] ?? arr[idx];
+  const denom = (y1 - 2*y2 + y3);
+  if (!isFinite(denom) || Math.abs(denom) < 1e-12) return idx * stepHz;
+  const delta = 0.5 * (y1 - y3) / denom;
+  return (idx + delta) * stepHz;
 }
 
-// =========================
-// Rotas
-// =========================
 app.use(express.static('public'));
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
   try {
     const inputPath = req.file.path;
     const outputPath = `${inputPath}.wav`;
-
-    // Converte para WAV mono 44.1 kHz
     execSync(`ffmpeg -y -i "${inputPath}" -ar 44100 -ac 1 "${outputPath}"`);
 
     const buffer = fs.readFileSync(outputPath);
@@ -116,72 +100,68 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       int16Samples.push(buffer.readInt16LE(i));
     }
 
-    const maxWindow = sampleRate;
-    const N = Math.min(int16Samples.length, maxWindow);
+    const N = Math.min(int16Samples.length, sampleRate);
     if (N < 2048) {
       fs.unlinkSync(inputPath); fs.unlinkSync(outputPath);
       return res.json({ dominantFrequency: 0, dominantNote: 'PAUSA', magnitude: 0 });
     }
 
     const x = hannWindowingRemoveDC(int16Samples.slice(0, N));
-
-    const fMin = 240;   // C4
-    const fMax = 1200;  // D6
-    const stepHz = 1;
-
+    const fMin = 240, fMax = 1200, stepHz = 1;
     const { freqs, mags } = magnitudeAtFrequencies(x, sampleRate, fMin, fMax, stepHz);
     const hpsArr = hps(mags, 3);
 
-    let peakIdx = 0, peakVal = -Infinity;
+    let peakIdx = 0;
+    let peakVal = -Infinity;
     for (let i = 0; i < hpsArr.length; i++) {
       if (hpsArr[i] > peakVal) { peakVal = hpsArr[i]; peakIdx = i; }
     }
 
-    if (!isFinite(peakVal) || peakVal <= 0) {
-      const rms = Math.sqrt(x.reduce((s,v)=>s+v*v,0)/x.length);
-      let dB = 20*Math.log10(rms/32768); if(!isFinite(dB)) dB=-100;
-      let intensity = (dB+60)/55; intensity = Math.max(0,Math.min(1,intensity));
-      fs.unlinkSync(inputPath); fs.unlinkSync(outputPath);
-      return res.json({ dominantFrequency: 0, dominantNote: 'PAUSA', magnitude: intensity });
-    }
-
-    const fGrid = freqs[peakIdx];
-    let fRefined = refineParabolic(freqs, mags, peakIdx);
+    // Refinamento parabólico
+    let fGrid = freqs[peakIdx];
+    let fRefined = refineParabolic(mags, peakIdx, stepHz);
     fRefined = Math.max(fMin, Math.min(fMax, fRefined));
 
+    console.log('grid candidate:', fGrid.toFixed(2));
+    console.log('before anti-octave, refined frequency:', fRefined.toFixed(2));
+
     // Anti-oitava
-    const halfF = fRefined/2;
-    if (halfF >= fMin) {
-      const halfIdx = Math.round((halfF - fMin)/stepHz);
-      const safeIdx = Math.max(0, Math.min(mags.length-1, halfIdx));
-      const ratio = mags[peakIdx]/(mags[safeIdx]+1e-9);
+    const halfF = fRefined / 2;
+    if (halfF >= fMin && halfF <= fMax) {
+      const halfIdx = Math.round((halfF - fMin) / stepHz);
+      const safeIdx = Math.max(0, Math.min(mags.length - 1, halfIdx));
+      const ratio = mags[peakIdx] / (mags[safeIdx] + 1e-9);
+      console.log('halfF', halfF.toFixed(2), 'ratio', ratio.toFixed(2));
       if (ratio < 1.25) fRefined = halfF;
     }
 
-    const limiarRel = 0.12 * Math.max(...mags);
+    const maxMag = Math.max(...mags);
+    const limiarRel = 0.05 * maxMag;
     let note;
     if (mags[peakIdx] < limiarRel || !isFinite(fRefined)) {
-      note = 'PAUSA'; fRefined = 0;
+      note = 'PAUSA';
+      fRefined = 0;
     } else {
       note = frequencyToNoteCStyle(fRefined);
     }
 
-    const rms = Math.sqrt(x.reduce((s,v)=>s+v*v,0)/x.length);
-    let dB = 20*Math.log10(rms/32768); if(!isFinite(dB)) dB=-100;
-    let intensity = (dB+60)/55; intensity = Math.max(0,Math.min(1,intensity));
+    const rms = Math.sqrt(x.reduce((s, v) => s + v*v, 0) / x.length);
+    let dB = 20 * Math.log10(rms / 32768);
+    if (!isFinite(dB)) dB = -100;
+    let intensity = (dB + 60) / (55);
+    intensity = Math.max(0, Math.min(1, intensity));
 
+    console.log('refined frequency:', fRefined.toFixed(2));
+    console.log('dominantNote:', note);
+    console.log('RMS dB:', dB.toFixed(2));
+    console.log('intensity (0~1):', intensity.toFixed(2));
     console.log('============================');
-    console.log(`grid candidate: ${fGrid.toFixed(1)} Hz`);
-    console.log(`refined frequency: ${fRefined.toFixed(2)} Hz`);
-    console.log(`dominantNote: ${note}`);
-    console.log(`RMS dB: ${dB.toFixed(2)} dB`);
-    console.log(`intensity (0~1): ${intensity.toFixed(2)}`);
-    console.log('============================');
 
-    res.json({ dominantFrequency: fRefined, dominantNote: note, magnitude: intensity });
+    res.json({ dominantFrequency: fRefined || 0, dominantNote: note, magnitude: intensity });
 
-    fs.unlinkSync(inputPath); fs.unlinkSync(outputPath);
-  } catch(err) {
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputPath);
+  } catch (err) {
     console.error('Erro:', err);
     res.status(500).json({ error: 'Erro na análise do áudio.' });
   }
