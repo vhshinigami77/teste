@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 
 const app = express();
 
-// CORS
+// CORS bem explícito (inclui OPTIONS)
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -27,11 +27,9 @@ function frequencyToNoteCStyle(freq) {
   if (!freq || freq <= 0 || isNaN(freq)) return 'PAUSA';
   const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   const n = 12 * Math.log2(freq / 440); // semitons desde A4
-  const noteIdx = Math.round(n + 9);
-  const octave = 4 + Math.floor(noteIdx / 12);
-  const note = NOTES[(noteIdx + 12*10) % 12]; // +12*10 para evitar negativos
-  if (octave < 4 || octave > 6) return 'PAUSA'; // limitar faixa da flauta
-  return `${note}${octave}`;
+  const q = Math.floor(Math.round(n + 9) / 12);
+  const r = Math.round(n + 9) % 12;
+  return `${NOTES[r]}${4 + q}`;
 }
 
 function hannWindowingRemoveDC(int16Array) {
@@ -52,6 +50,7 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
   const N = signal.length;
   const freqs = [];
   const mags  = [];
+
   for (let f = fStart; f <= fEnd; f += stepHz) {
     const w = 2 * Math.PI * f / sampleRate;
     const cosStep = Math.cos(w);
@@ -60,6 +59,7 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
     let sinPrev = 0;
     let real = 0;
     let imag = 0;
+
     for (let n = 0; n < N; n++) {
       const x = signal[n];
       real += x * cosPrev;
@@ -76,7 +76,7 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
   return { freqs, mags };
 }
 
-// HPS 3 harmônicos
+// Harmonic Product Spectrum
 function hps(mags, harmonics = 3) {
   const L = mags.length;
   const out = new Float32Array(L);
@@ -103,14 +103,6 @@ function refineParabolic(arr, idx, stepHz) {
   return (idx + delta) * stepHz;
 }
 
-// Filtro exponencial para suavização da frequência
-let lastFrequency = 0;
-function smoothFrequency(freq, alpha = 0.3) {
-  if (!lastFrequency) lastFrequency = freq;
-  lastFrequency = alpha * freq + (1 - alpha) * lastFrequency;
-  return lastFrequency;
-}
-
 app.use(express.static('public'));
 
 app.post('/upload', upload.single('audio'), async (req, res) => {
@@ -129,7 +121,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
       int16Samples.push(buffer.readInt16LE(i));
     }
 
-    const maxWindow = sampleRate; // 1s
+    const maxWindow = sampleRate;
     const N = Math.min(int16Samples.length, maxWindow);
     if (N < 2048) {
       fs.unlinkSync(inputPath); fs.unlinkSync(outputPath);
@@ -138,14 +130,13 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     const x = hannWindowingRemoveDC(int16Samples.slice(0, N));
 
-    const fMin = 240; // C4
-    const fMax = 1200; // D6
+    const fMin = 240;
+    const fMax = 1200;
     const stepHz = 1;
 
     const { freqs, mags } = magnitudeAtFrequencies(x, sampleRate, fMin, fMax, stepHz);
     const hpsArr = hps(mags, 3);
 
-    // Pico HPS
     let peakIdx = 0;
     let peakVal = -Infinity;
     for (let i = 0; i < hpsArr.length; i++) {
@@ -156,65 +147,66 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     }
 
     if (!isFinite(peakVal) || peakVal <= 0) {
-      const rms = Math.sqrt(x.reduce((s, v) => s + v*v, 0)/x.length);
-      let dB = 20 * Math.log10(rms/32768);
+      const rms = Math.sqrt(x.reduce((s, v) => s + v*v, 0) / x.length);
+      let dB = 20 * Math.log10(rms / 32768);
       if (!isFinite(dB)) dB = -100;
       const minDb = -60, maxDb = -5;
       let intensity = (dB - minDb) / (maxDb - minDb);
       intensity = Math.max(0, Math.min(1, intensity));
+
       fs.unlinkSync(inputPath); fs.unlinkSync(outputPath);
       return res.json({ dominantFrequency: 0, dominantNote: 'PAUSA', magnitude: intensity });
     }
 
-    let fRefined = refineParabolic(mags, peakIdx, stepHz);
+    // **Corrigido: usa HPS para refinar**
+    let fRefined = refineParabolic(hpsArr, peakIdx, stepHz);
+    fRefined = Math.max(fMin, Math.min(fMax, fRefined));
 
-    // Anti-oitava robusto
+    const fGrid = freqs[peakIdx];
+
+    // Anti-oitava
     const halfF = fRefined / 2;
     if (halfF >= fMin) {
-      const halfIdx = Math.round((halfF - fMin)/stepHz);
-      const safeIdx = Math.max(0, Math.min(mags.length-1, halfIdx));
-      const ratio = mags[peakIdx] / (mags[safeIdx]+1e-9);
-      if (ratio < 1.25) fRefined = halfF;
+      const halfIdx = Math.round((halfF - fMin) / stepHz);
+      const safeIdx = Math.max(0, Math.min(mags.length - 1, halfIdx));
+      const ratio = mags[peakIdx] / (mags[safeIdx] + 1e-9);
+      if (ratio < 1.25) {
+        fRefined = halfF;
+      }
     }
 
-    // Limite relativo
     const maxMag = Math.max(...mags);
     const limiarRel = 0.12 * maxMag;
     let note;
-    if (mags[peakIdx] < limiarRel || !isFinite(fRefined)) {
+    if (hpsArr[peakIdx] < limiarRel || !isFinite(fRefined)) {
       note = 'PAUSA';
       fRefined = 0;
     } else {
       note = frequencyToNoteCStyle(fRefined);
     }
 
-    // Intensidade
-    const rms = Math.sqrt(x.reduce((s,v)=>s+v*v,0)/x.length);
-    let dB = 20 * Math.log10(rms/32768);
+    const rms = Math.sqrt(x.reduce((s, v) => s + v*v, 0) / x.length);
+    let dB = 20 * Math.log10(rms / 32768);
     if (!isFinite(dB)) dB = -100;
     const minDb = -60, maxDb = -5;
-    let intensity = (dB - minDb)/(maxDb-minDb);
+    let intensity = (dB - minDb) / (maxDb - minDb);
     intensity = Math.max(0, Math.min(1, intensity));
 
-    // Suavização da frequência
-    const smoothedFreq = smoothFrequency(fRefined);
-
     console.log('============================');
-    console.log(`dominantFrequency: ${smoothedFreq.toFixed(2)} Hz (grid ${freqs[peakIdx].toFixed(1)} Hz)`);
+    console.log(`dominantFrequency: ${fRefined.toFixed(2)} Hz (grid ${fGrid.toFixed(1)} Hz)`);
     console.log(`dominantNote: ${note}`);
     console.log(`RMS dB: ${dB.toFixed(2)} dB`);
     console.log(`intensity (0~1): ${intensity.toFixed(2)}`);
     console.log('============================');
 
     res.json({
-      dominantFrequency: smoothedFreq || 0,
+      dominantFrequency: fRefined || 0,
       dominantNote: note,
       magnitude: intensity
     });
 
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
-
   } catch (err) {
     console.error('Erro:', err);
     res.status(500).json({ error: 'Erro na análise do áudio.' });
