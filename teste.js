@@ -33,7 +33,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const outputPath = `${inputPath}.wav`;
 
     // Converte para WAV, mono, 44.1 kHz
-    execSync(`ffmpeg -i ${inputPath} -ar 44100 -ac 1 ${outputPath}`);
+    execSync(`ffmpeg -i "${inputPath}" -ar 44100 -ac 1 "${outputPath}"`);
 
     const buffer = fs.readFileSync(outputPath);
     const headerSize = 44;
@@ -49,8 +49,10 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     const windowSize = sampleRate; // 1 segundo
     const N = Math.min(windowSize, int16Samples.length);
     const freqStep = 1;
-    const minFreq = 16;
-    const maxFreq = 1048;
+
+    // Faixa da flauta doce: C4 (~262 Hz) até D6 (~1175 Hz)
+    const minFreq = 240;
+    const maxFreq = 1200;
 
     let maxMag = 0;
     let peakFreq = 0;
@@ -86,14 +88,14 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // Cálculo de intensidade em dB
     // ==================
     const rms = Math.sqrt(int16Samples.slice(0, N).reduce((sum, s) => sum + s*s, 0) / N);
-    let dB = 20 * Math.log10(rms / 32768); // referência 16-bit
-    if (!isFinite(dB)) dB = -100; // silêncio total
+    let dB = 20 * Math.log10(rms / 32768);
+    if (!isFinite(dB)) dB = -100;
 
-    // Normaliza para 0~1 para frontend
-    const minDb = -60; // silêncio completo
-    const maxDb = -5;  // volume máximo típico
+    // Normaliza para 0~1
+    const minDb = -60;
+    const maxDb = -5;
     let intensity = (dB - minDb) / (maxDb - minDb);
-    intensity = Math.max(0, Math.min(1, intensity)); // garante 0~1
+    intensity = Math.max(0, Math.min(1, intensity));
 
     // LOG
     console.log('============================');
@@ -107,7 +109,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: intensity // agora intensity controla brilho/opacidade
+      magnitude: intensity
     });
 
     // Remove arquivos temporários
