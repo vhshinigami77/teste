@@ -78,6 +78,17 @@
       transition: all 0.3s ease;
     }
 
+    .n-display {
+      margin-top: 10px;
+      font-size: 18px;
+      font-weight: bold;
+      background: #222;
+      padding: 5px 15px;
+      border-radius: 6px;
+      display: inline-block;
+      box-shadow: 0 0 5px #000;
+    }
+
     .magnitude-bar-container {
       width: 300px;
       height: 20px;
@@ -91,18 +102,6 @@
       background: #4caf50;
       border-radius: 10px;
       transition: width 0.3s;
-    }
-
-    /* NOVO bloco para exibir n */
-    .n-display {
-      margin-top: 10px;
-      font-size: 18px;
-      font-weight: bold;
-      padding: 8px 16px;
-      border-radius: 8px;
-      background: #222;
-      display: inline-block;
-      box-shadow: 0 0 5px #000;
     }
   </style>
 </head>
@@ -157,12 +156,13 @@
 
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
 
+  <div class="n-display" id="nDisplay">n = --</div>
+  <div class="n-display" id="qDisplay">q = --</div>
+  <div class="n-display" id="rDisplay">r = --</div>
+
   <div class="magnitude-bar-container">
     <div id="magnitudeBar"></div>
   </div>
-
-  <!-- NOVO bloco para exibir n -->
-  <div class="n-display" id="nDisplay">n = --</div>
 
   <script>
     let mediaRecorder;
@@ -174,8 +174,6 @@
     const magnitudeBar = document.getElementById('magnitudeBar');
     const keys = document.querySelectorAll('.key');
 
-    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
     function resetKeys() {
       keys.forEach(k => { 
         k.classList.remove('active'); 
@@ -185,10 +183,9 @@
       noteDisplay.style.opacity = 0.2;
       noteDisplay.style.boxShadow = '0 0 5px #fff';
       magnitudeBar.style.width = '0%';
-      document.getElementById('nDisplay').textContent = "n = --";
     }
 
-    function highlightNote(note, freq, magnitude, nValue) {
+    function highlightNote(note, freq, magnitude, nValue, qValue, rValue) {
       resetKeys();
 
       let opacity = 0.2;
@@ -221,13 +218,10 @@
 
       magnitudeBar.style.width = `${Math.min(magnitude,1)*100}%`;
 
-      // Atualiza exibição de n
-      const nDisplay = document.getElementById('nDisplay');
-      if (nValue !== null && !isNaN(nValue)) {
-        nDisplay.textContent = `n = ${nValue.toFixed(2)}`;
-      } else {
-        nDisplay.textContent = `n = --`;
-      }
+      // Exibe n, q, r
+      document.getElementById('nDisplay').textContent = (nValue !== null) ? `n = ${nValue.toFixed(2)}` : "n = --";
+      document.getElementById('qDisplay').textContent = (qValue !== null) ? `q = ${qValue}` : "q = --";
+      document.getElementById('rDisplay').textContent = (rValue !== null) ? `r = ${rValue}` : "r = --";
     }
 
     async function enviarAudio(blob) {
@@ -240,7 +234,14 @@
           body: formData
         });
         const data = await response.json();
-        highlightNote(data.dominantNote, data.dominantFrequency, data.magnitude, data.nValue);
+        highlightNote(
+          data.dominantNote,
+          data.dominantFrequency,
+          data.magnitude,
+          data.nValue,
+          data.qValue,
+          data.rValue
+        );
       } catch(err) {
         console.error(err);
         noteDisplay.textContent = "Erro na análise";
@@ -255,7 +256,7 @@
         mediaRecorder.start();
         const audioBlob = await new Promise(resolve => {
           mediaRecorder.ondataavailable = e => resolve(e.data);
-          setTimeout(() => mediaRecorder.stop(), 500); // janela de 1s
+          setTimeout(() => mediaRecorder.stop(), 500);
         });
         await enviarAudio(audioBlob);
       }
