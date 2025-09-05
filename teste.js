@@ -8,14 +8,16 @@ import { fileURLToPath } from 'url';
 
 const app = express();
 
+// CORS
 app.use(cors({
   origin: '*',
-  methods: ['GET','POST','OPTIONS'],
+  methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
 }));
 app.options('/upload', cors());
 
 const upload = multer({ dest: 'uploads/' });
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -24,10 +26,12 @@ const __dirname = path.dirname(__filename);
 function frequencyToNoteCStyle(freq) {
   if (!freq || freq <= 0 || isNaN(freq)) return 'PAUSA';
   const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  const n = Math.round(12 * Math.log2(freq / 440)); // semitons desde A4
-  const noteIdx = (n + 9) % 12; // índice nota
-  const octave = 4 + Math.floor((n + 9) / 12);
-  return `${NOTES[(noteIdx + 12) % 12]}${octave}`;
+  const n = 12 * Math.log2(freq / 440); // semitons desde A4
+  const noteIdx = Math.round(n + 9);
+  const octave = 4 + Math.floor(noteIdx / 12);
+  const note = NOTES[(noteIdx + 12*10) % 12]; // +12*10 para evitar negativos
+  if (octave < 4 || octave > 6) return 'PAUSA'; // limitar faixa da flauta
+  return `${note}${octave}`;
 }
 
 function hannWindowingRemoveDC(int16Array) {
@@ -52,8 +56,10 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
     const w = 2 * Math.PI * f / sampleRate;
     const cosStep = Math.cos(w);
     const sinStep = Math.sin(w);
-    let cosPrev = 1, sinPrev = 0;
-    let real = 0, imag = 0;
+    let cosPrev = 1;
+    let sinPrev = 0;
+    let real = 0;
+    let imag = 0;
     for (let n = 0; n < N; n++) {
       const x = signal[n];
       real += x * cosPrev;
@@ -63,13 +69,14 @@ function magnitudeAtFrequencies(signal, sampleRate, fStart, fEnd, stepHz) {
       cosPrev = cosNew;
       sinPrev = sinNew;
     }
+    const mag = Math.hypot(real, imag);
     freqs.push(f);
-    mags.push(Math.hypot(real, imag));
+    mags.push(mag);
   }
   return { freqs, mags };
 }
 
-// HPS
+// HPS 3 harmônicos
 function hps(mags, harmonics = 3) {
   const L = mags.length;
   const out = new Float32Array(L);
@@ -86,24 +93,31 @@ function hps(mags, harmonics = 3) {
 }
 
 // Interpolação parabólica
-function refineParabolic(arr, idx, stepHz, fMin) {
+function refineParabolic(arr, idx, stepHz) {
   const y1 = arr[idx - 1] ?? arr[idx];
   const y2 = arr[idx];
   const y3 = arr[idx + 1] ?? arr[idx];
   const denom = (y1 - 2*y2 + y3);
-  if (!isFinite(denom) || Math.abs(denom) < 1e-12) return fMin + idx * stepHz;
+  if (!isFinite(denom) || Math.abs(denom) < 1e-12) return idx * stepHz;
   const delta = 0.5 * (y1 - y3) / denom;
-  return fMin + (idx + delta) * stepHz;
+  return (idx + delta) * stepHz;
+}
+
+// Filtro exponencial para suavização da frequência
+let lastFrequency = 0;
+function smoothFrequency(freq, alpha = 0.3) {
+  if (!lastFrequency) lastFrequency = freq;
+  lastFrequency = alpha * freq + (1 - alpha) * lastFrequency;
+  return lastFrequency;
 }
 
 app.use(express.static('public'));
 
-app.post('/upload', upload.single('audio'), async (req,res) => {
+app.post('/upload', upload.single('audio'), async (req, res) => {
   try {
     const inputPath = req.file.path;
     const outputPath = `${inputPath}.wav`;
 
-    // Converte para WAV, mono, 44.1 kHz
     execSync(`ffmpeg -y -i "${inputPath}" -ar 44100 -ac 1 "${outputPath}"`);
 
     const buffer = fs.readFileSync(outputPath);
@@ -115,7 +129,7 @@ app.post('/upload', upload.single('audio'), async (req,res) => {
       int16Samples.push(buffer.readInt16LE(i));
     }
 
-    const maxWindow = sampleRate; // 1 s
+    const maxWindow = sampleRate; // 1s
     const N = Math.min(int16Samples.length, maxWindow);
     if (N < 2048) {
       fs.unlinkSync(inputPath); fs.unlinkSync(outputPath);
@@ -124,68 +138,83 @@ app.post('/upload', upload.single('audio'), async (req,res) => {
 
     const x = hannWindowingRemoveDC(int16Samples.slice(0, N));
 
-    const fMin = 240;
-    const fMax = 1200;
+    const fMin = 240; // C4
+    const fMax = 1200; // D6
     const stepHz = 1;
 
     const { freqs, mags } = magnitudeAtFrequencies(x, sampleRate, fMin, fMax, stepHz);
-
     const hpsArr = hps(mags, 3);
 
-    // Pico no HPS
-    let peakIdx = 0, peakVal = -Infinity;
+    // Pico HPS
+    let peakIdx = 0;
+    let peakVal = -Infinity;
     for (let i = 0; i < hpsArr.length; i++) {
-      if (hpsArr[i] > peakVal) { peakVal = hpsArr[i]; peakIdx = i; }
+      if (hpsArr[i] > peakVal) {
+        peakVal = hpsArr[i];
+        peakIdx = i;
+      }
     }
 
     if (!isFinite(peakVal) || peakVal <= 0) {
-      const rms = Math.sqrt(x.reduce((s,v)=>s+v*v,0)/x.length);
-      let dB = 20 * Math.log10(rms / 32768);
-      if (!isFinite(dB)) dB=-100;
-      let intensity = Math.max(0,Math.min(1,(dB + 60)/55));
+      const rms = Math.sqrt(x.reduce((s, v) => s + v*v, 0)/x.length);
+      let dB = 20 * Math.log10(rms/32768);
+      if (!isFinite(dB)) dB = -100;
+      const minDb = -60, maxDb = -5;
+      let intensity = (dB - minDb) / (maxDb - minDb);
+      intensity = Math.max(0, Math.min(1, intensity));
       fs.unlinkSync(inputPath); fs.unlinkSync(outputPath);
       return res.json({ dominantFrequency: 0, dominantNote: 'PAUSA', magnitude: intensity });
     }
 
-    let fRefined = refineParabolic(mags, peakIdx, stepHz, fMin);
+    let fRefined = refineParabolic(mags, peakIdx, stepHz);
 
-    // Anti-oitava (sub-harmônicos) no mesmo vetor do HPS
-    const halfIdxHPS = Math.floor(peakIdx / 2);
-    if (halfIdxHPS >= 0) {
-      const ratio = hpsArr[peakIdx] / (hpsArr[halfIdxHPS] + 1e-9);
-      if (ratio < 1.25) fRefined = freqs[halfIdxHPS];
+    // Anti-oitava robusto
+    const halfF = fRefined / 2;
+    if (halfF >= fMin) {
+      const halfIdx = Math.round((halfF - fMin)/stepHz);
+      const safeIdx = Math.max(0, Math.min(mags.length-1, halfIdx));
+      const ratio = mags[peakIdx] / (mags[safeIdx]+1e-9);
+      if (ratio < 1.25) fRefined = halfF;
     }
 
+    // Limite relativo
     const maxMag = Math.max(...mags);
     const limiarRel = 0.12 * maxMag;
     let note;
-    if (hpsArr[peakIdx] < limiarRel || !isFinite(fRefined)) {
+    if (mags[peakIdx] < limiarRel || !isFinite(fRefined)) {
       note = 'PAUSA';
       fRefined = 0;
     } else {
       note = frequencyToNoteCStyle(fRefined);
     }
 
+    // Intensidade
     const rms = Math.sqrt(x.reduce((s,v)=>s+v*v,0)/x.length);
-    let dB = 20 * Math.log10(rms / 32768);
-    if (!isFinite(dB)) dB=-100;
-    let intensity = Math.max(0,Math.min(1,(dB + 60)/55));
+    let dB = 20 * Math.log10(rms/32768);
+    if (!isFinite(dB)) dB = -100;
+    const minDb = -60, maxDb = -5;
+    let intensity = (dB - minDb)/(maxDb-minDb);
+    intensity = Math.max(0, Math.min(1, intensity));
+
+    // Suavização da frequência
+    const smoothedFreq = smoothFrequency(fRefined);
 
     console.log('============================');
-    console.log(`dominantFrequency: ${fRefined.toFixed(2)} Hz`);
+    console.log(`dominantFrequency: ${smoothedFreq.toFixed(2)} Hz (grid ${freqs[peakIdx].toFixed(1)} Hz)`);
     console.log(`dominantNote: ${note}`);
     console.log(`RMS dB: ${dB.toFixed(2)} dB`);
     console.log(`intensity (0~1): ${intensity.toFixed(2)}`);
     console.log('============================');
 
     res.json({
-      dominantFrequency: fRefined || 0,
+      dominantFrequency: smoothedFreq || 0,
       dominantNote: note,
       magnitude: intensity
     });
 
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
+
   } catch (err) {
     console.error('Erro:', err);
     res.status(500).json({ error: 'Erro na análise do áudio.' });
@@ -193,4 +222,6 @@ app.post('/upload', upload.single('audio'), async (req,res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=>console.log(`Servidor rodando na porta ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
