@@ -78,17 +78,6 @@
       transition: all 0.3s ease;
     }
 
-    .n-display {
-      margin-top: 10px;
-      font-size: 18px;
-      font-weight: bold;
-      background: #222;
-      padding: 5px 15px;
-      border-radius: 6px;
-      display: inline-block;
-      box-shadow: 0 0 5px #000;
-    }
-
     .magnitude-bar-container {
       width: 300px;
       height: 20px;
@@ -114,23 +103,7 @@
   <button id="stopBtn" disabled>Parar</button>
 
   <div class="keyboards">
-    <!-- Oitava 4 -->
-    <div class="keyboard" id="octave4">
-      <div class="key C" data-note="C4">C4</div>
-      <div class="key Csharp" data-note="C#4">C#4 / Db4</div>
-      <div class="key D" data-note="D4">D4</div>
-      <div class="key Dsharp" data-note="D#4">D#4 / Eb4</div>
-      <div class="key E" data-note="E4">E4</div>
-      <div class="key F" data-note="F4">F4</div>
-      <div class="key Fsharp" data-note="F#4">F#4 / Gb4</div>
-      <div class="key G" data-note="G4">G4</div>
-      <div class="key Gsharp" data-note="G#4">G#4 / Ab4</div>
-      <div class="key A" data-note="A4">A4</div>
-      <div class="key Asharp" data-note="A#4">A#4 / Bb4</div>
-      <div class="key B" data-note="B4">B4</div>
-    </div>
-
-    <!-- Oitava 5 -->
+    <!-- Somente Oitava 5 -->
     <div class="keyboard" id="octave5">
       <div class="key C" data-note="C5">C5</div>
       <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
@@ -145,20 +118,9 @@
       <div class="key Asharp" data-note="A#5">A#5 / Bb5</div>
       <div class="key B" data-note="B5">B5</div>
     </div>
-
-    <!-- Oitava 6 -->
-    <div class="keyboard" id="octave6">
-      <div class="key C" data-note="C6">C6</div>
-      <div class="key Csharp" data-note="C#6">C#6 / Db6</div>
-      <div class="key D" data-note="D6">D6</div>
-    </div>
   </div>
 
   <div class="note-display" id="noteDisplay">Nenhuma nota</div>
-
-  <div class="n-display" id="nDisplay">n = --</div>
-  <div class="n-display" id="qDisplay">q = --</div>
-  <div class="n-display" id="rDisplay">r = --</div>
 
   <div class="magnitude-bar-container">
     <div id="magnitudeBar"></div>
@@ -185,7 +147,7 @@
       magnitudeBar.style.width = '0%';
     }
 
-    function highlightNote(note, freq, magnitude, nValue, qValue, rValue) {
+    function highlightNote(note, freq, magnitude) {
       resetKeys();
 
       let opacity = 0.2;
@@ -217,11 +179,6 @@
       }
 
       magnitudeBar.style.width = `${Math.min(magnitude,1)*100}%`;
-
-      // Exibe n, q, r
-      document.getElementById('nDisplay').textContent = (nValue !== null) ? `n = ${nValue.toFixed(2)}` : "n = --";
-      document.getElementById('qDisplay').textContent = (qValue !== null) ? `q = ${qValue}` : "q = --";
-      document.getElementById('rDisplay').textContent = (rValue !== null) ? `r = ${rValue}` : "r = --";
     }
 
     async function enviarAudio(blob) {
@@ -237,10 +194,7 @@
         highlightNote(
           data.dominantNote,
           data.dominantFrequency,
-          data.magnitude,
-          data.nValue,
-          data.qValue,
-          data.rValue
+          data.magnitude
         );
       } catch(err) {
         console.error(err);
