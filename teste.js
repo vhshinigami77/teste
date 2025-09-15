@@ -14,18 +14,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ========================
-// Função: frequencyToNoteCStyle
+// Função: frequencyToNoteCStyle (simplificada)
 // ========================
 function frequencyToNoteCStyle(freq) {
-  if (!freq || freq <= 0 || isNaN(freq)) return { note: 'PAUSA', n: null, q: null, r: null };
+  if (!freq || freq <= 0 || isNaN(freq)) return 'PAUSA';
 
   const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  const n = 12 * Math.log2(freq / 440);
-  const q = Math.floor(Math.round(n + 9) / 12);
-  const r = Math.round(n + 9) % 12;
-  const note = `${NOTES[r]}${4 + q}`;
-
-  return { note, n, q, r };
+  const n = 12 * Math.log2(freq / 440); // diferença em semitons em relação ao A4
+  const noteIndex = Math.round(n + 9) % 12; // índice da nota
+  const octave = 4 + Math.floor(Math.round(n + 9) / 12);
+  return `${NOTES[noteIndex]}${octave}`;
 }
 
 app.use(express.static('public'));
@@ -65,7 +63,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
         real += int16Samples[n] * Math.cos(angle);
         imag -= int16Samples[n] * Math.sin(angle);
       }
-      const magnitude = Math.sqrt(real*real + imag*imag);
+      const magnitude = Math.sqrt(real * real + imag * imag);
       if (magnitude > maxMag) {
         maxMag = magnitude;
         peakFreq = freq;
@@ -76,26 +74,21 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     // Limiar e conversão de nota
     // ==================
     const limiar = 1000; // ignora ruídos fracos
-    let note, nValue, qValue, rValue;
+    let note;
     if (!peakFreq || isNaN(peakFreq) || maxMag < limiar) {
       note = 'PAUSA';
       peakFreq = 0;
       maxMag = 0;
-      nValue = null;
-      qValue = null;
-      rValue = null;
     } else {
-      const result = frequencyToNoteCStyle(peakFreq);
-      note = result.note;
-      nValue = result.n;
-      qValue = result.q;
-      rValue = result.r;
+      note = frequencyToNoteCStyle(peakFreq);
     }
 
     // ==================
     // Cálculo de intensidade em dB
     // ==================
-    const rms = Math.sqrt(int16Samples.slice(0, N).reduce((sum, s) => sum + s*s, 0) / N);
+    const rms = Math.sqrt(
+      int16Samples.slice(0, N).reduce((sum, s) => sum + s * s, 0) / N
+    );
     let dB = 20 * Math.log10(rms / 32768); // referência 16-bit
     if (!isFinite(dB)) dB = -100; // silêncio total
 
@@ -109,19 +102,15 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     console.log('============================');
     console.log(`dominantFrequency: ${peakFreq.toFixed(2)} Hz`);
     console.log(`dominantNote: ${note}`);
-    console.log(`n = ${nValue}, q = ${qValue}, r = ${rValue}`);
     console.log(`RMS dB: ${dB.toFixed(2)} dB`);
     console.log(`intensity (0~1): ${intensity.toFixed(2)}`);
     console.log('============================');
 
-    // Envia resposta JSON
+    // Envia resposta JSON (sem n, q e r)
     res.json({
       dominantFrequency: peakFreq,
       dominantNote: note,
-      magnitude: intensity,
-      nValue: nValue,
-      qValue: qValue,
-      rValue: rValue
+      magnitude: intensity
     });
 
     // Remove arquivos temporários
