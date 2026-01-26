@@ -4,10 +4,14 @@ import cors from 'cors';
 import fs from 'fs';
 import { Worker } from 'worker_threads';
 import { execSync } from 'child_process';
+import path from 'path';
 
 const app = express();
 app.use(cors());
 
+// ==============================
+// Upload config
+// ==============================
 const upload = multer({ dest: 'uploads/' });
 
 // ==============================
@@ -15,11 +19,18 @@ const upload = multer({ dest: 'uploads/' });
 // ==============================
 app.post('/upload', upload.single('audio'), (req, res) => {
   try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Arquivo não enviado' });
+    }
+
     const inputPath = req.file.path;
-    const wavPath = ${inputPath}.wav;
+    const wavPath = `${inputPath}.wav`;
 
     // Converte para WAV mono 44.1 kHz
-    execSync(ffmpeg -y -i ${inputPath} -ar 44100 -ac 1 ${wavPath});
+    execSync(
+      `ffmpeg -y -i "${inputPath}" -ar 44100 -ac 1 "${wavPath}"`,
+      { stdio: 'ignore' }
+    );
 
     const buffer = fs.readFileSync(wavPath);
     const HEADER = 44;
@@ -29,7 +40,9 @@ app.post('/upload', upload.single('audio'), (req, res) => {
       samples.push(buffer.readInt16LE(i));
     }
 
+    // ==============================
     // Worker Thread
+    // ==============================
     const worker = new Worker('./audioWorker.js', {
       workerData: {
         samples,
@@ -39,21 +52,32 @@ app.post('/upload', upload.single('audio'), (req, res) => {
 
     worker.on('message', result => {
       res.json(result);
+
+      // Limpeza dos arquivos temporários
       fs.unlinkSync(inputPath);
       fs.unlinkSync(wavPath);
     });
 
     worker.on('error', err => {
       console.error(err);
-      res.status(500).json({ error: 'Erro no processamento' });
+      res.status(500).json({ error: 'Erro no processamento do áudio' });
+    });
+
+    worker.on('exit', code => {
+      if (code !== 0) {
+        console.error(`Worker finalizou com código ${code}`);
+      }
     });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Erro geral' });
+    res.status(500).json({ error: 'Erro geral no servidor' });
   }
 });
 
+// ==============================
+// Server
+// ==============================
 app.listen(3000, () => {
   console.log('Servidor rodando em http://localhost:3000');
 });
