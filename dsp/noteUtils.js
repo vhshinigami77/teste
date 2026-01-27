@@ -8,5 +8,5 @@ export function frequencyToNote(freq) {
   const note = noteNames[midi % 12];
   const octave = Math.floor(midi / 12) - 1;
 
-  return ${note}${octave};
+  return `${note}${octave}`;
 }
