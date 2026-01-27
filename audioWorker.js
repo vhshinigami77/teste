@@ -1,6 +1,8 @@
 import { parentPort, workerData } from 'worker_threads';
-import { fft, util as fftUtil } from 'fft-js';
+import fftPkg from 'fft-js';
 import { frequencyToNote } from './dsp/noteUtils.js';
+
+const { fft, util: fftUtil } = fftPkg;
 
 // ==============================
 // Dados recebidos
@@ -10,7 +12,7 @@ const { samples, sampleRate } = workerData;
 // ==============================
 // Parâmetros DSP
 // ==============================
-const WINDOW_SIZE = 4096; // ~93 ms @ 44.1 kHz
+const WINDOW_SIZE = 4096;
 const MIN_FREQ = 50;
 const MAX_FREQ = 1200;
 
@@ -34,7 +36,7 @@ const mags = fftUtil.fftMag(phasors);
 const freqResolution = sampleRate / N;
 
 // ==============================
-// Fundamental (com penalização de harmônicos)
+// Fundamental (penaliza harmônicos)
 // ==============================
 let bestFreq = 0;
 let bestScore = 0;
@@ -60,6 +62,7 @@ let sumSq = 0;
 for (let i = 0; i < N; i++) {
   sumSq += samples[i] * samples[i];
 }
+
 const rms = Math.sqrt(sumSq / N);
 const dB = 20 * Math.log10(rms / 32768);
 const intensity = Math.max(0, Math.min(1, (dB + 60) / 55));
@@ -68,7 +71,7 @@ const intensity = Math.max(0, Math.min(1, (dB + 60) / 55));
 // Resultado
 // ==============================
 parentPort.postMessage({
-  frequency: bestFreq,
+  frequency: Number(bestFreq.toFixed(2)),
   note: frequencyToNote(bestFreq),
-  intensity
+  intensity: Number(intensity.toFixed(3))
 });
