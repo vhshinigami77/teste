@@ -103,7 +103,6 @@
   <button id="stopBtn" disabled>Parar</button>
 
   <div class="keyboards">
-    <!-- Oitava 5 -->
     <div class="keyboard" id="octave5">
       <div class="key C" data-note="C5">C5</div>
       <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
@@ -119,7 +118,6 @@
       <div class="key B" data-note="B5">B5</div>
     </div>
 
-    <!-- Oitava 6 -->
     <div class="keyboard" id="octave6">
       <div class="key C" data-note="C6">C6</div>
       <div class="key Csharp" data-note="C#6">C#6 / Db6</div>
@@ -198,6 +196,8 @@
     }
 
     async function enviarAudio(blob) {
+      if (!blob || blob.size < 100) return; // ignora áudio muito pequeno
+
       const formData = new FormData();
       formData.append('audio', blob, 'audio.webm');
 
@@ -207,10 +207,11 @@
           body: formData
         });
         const data = await response.json();
+
         highlightNote(
-          data.dominantNote,
-          data.dominantFrequency,
-          data.magnitude
+          data.note,       // corrigido
+          data.frequency,  // corrigido
+          data.intensity   // corrigido
         );
       } catch(err) {
         console.error(err);
