@@ -10,6 +10,13 @@ const { fft, util: fftUtil } = fftPkg;
 const { samples, sampleRate } = workerData;
 
 // ==============================
+// Utils
+// ==============================
+function nearestPowerOfTwo(n) {
+  return 2 ** Math.floor(Math.log2(n));
+}
+
+// ==============================
 // Parâmetros DSP
 // ==============================
 const WINDOW_SIZE = 4096;
@@ -17,9 +24,24 @@ const MIN_FREQ = 50;
 const MAX_FREQ = 1200;
 
 // ==============================
+// Ajuste do tamanho da janela
+// ==============================
+const rawN = Math.min(WINDOW_SIZE, samples.length);
+const N = nearestPowerOfTwo(rawN);
+
+// Áudio curto demais → evita crash e lixo espectral
+if (N < 1024) {
+  parentPort.postMessage({
+    frequency: 0,
+    note: 'PAUSA',
+    intensity: 0
+  });
+  process.exit(0);
+}
+
+// ==============================
 // Janela de Hann
 // ==============================
-const N = Math.min(WINDOW_SIZE, samples.length);
 const windowed = new Array(N);
 
 for (let n = 0; n < N; n++) {
@@ -36,7 +58,7 @@ const mags = fftUtil.fftMag(phasors);
 const freqResolution = sampleRate / N;
 
 // ==============================
-// Fundamental (penaliza harmônicos)
+// Fundamental (penalização de harmônicos)
 // ==============================
 let bestFreq = 0;
 let bestScore = 0;
