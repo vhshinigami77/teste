@@ -1,99 +1,69 @@
-import { parentPort, workerData } from 'worker_threads';
+import { parentPort, isMainThread } from 'worker_threads';
 import fftPkg from 'fft-js';
 import { frequencyToNote } from './dsp/noteUtils.js';
 
-const { fft, util: fftUtil } = fftPkg;
-
-// ==============================
-// Dados recebidos
-// ==============================
-const { samples, sampleRate } = workerData;
-
-// ==============================
-// Utils
-// ==============================
-function nearestPowerOfTwo(n) {
-  return 2 ** Math.floor(Math.log2(n));
+if (isMainThread) {
+  console.error('audioWorker deve ser executado como Worker');
+  process.exit(1);
 }
 
-// ==============================
-// Parâmetros DSP
-// ==============================
-const WINDOW_SIZE = 4096;
-const MIN_FREQ = 50;
-const MAX_FREQ = 1200;
+const { fft, util } = fftPkg;
 
-// ==============================
-// Ajuste do tamanho da janela
-// ==============================
-const rawN = Math.min(WINDOW_SIZE, samples.length);
-const N = nearestPowerOfTwo(rawN);
+parentPort.on('message', ({ samples, sampleRate }) => {
 
-// Áudio curto demais → evita crash e lixo espectral
-if (N < 1024) {
-  parentPort.postMessage({
-    frequency: 0,
-    note: 'PAUSA',
-    intensity: 0
-  });
-  process.exit(0);
-}
-
-// ==============================
-// Janela de Hann
-// ==============================
-const windowed = new Array(N);
-
-for (let n = 0; n < N; n++) {
-  const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * n / (N - 1));
-  windowed[n] = samples[n] * w;
-}
-
-// ==============================
-// FFT
-// ==============================
-const phasors = fft(windowed);
-const mags = fftUtil.fftMag(phasors);
-
-const freqResolution = sampleRate / N;
-
-// ==============================
-// Fundamental (penalização de harmônicos)
-// ==============================
-let bestFreq = 0;
-let bestScore = 0;
-
-for (let i = 1; i < mags.length / 2; i++) {
-  const freq = i * freqResolution;
-  if (freq < MIN_FREQ || freq > MAX_FREQ) continue;
-
-  let score = mags[i];
-  if (mags[2 * i]) score -= 0.6 * mags[2 * i];
-  if (mags[3 * i]) score -= 0.3 * mags[3 * i];
-
-  if (score > bestScore) {
-    bestScore = score;
-    bestFreq = freq;
+  const N = 2048;
+  if (!samples || samples.length < N) {
+    parentPort.postMessage({ note:'PAUSA', frequency:0, intensity:0 });
+    return;
   }
-}
 
-// ==============================
-// Intensidade (RMS)
-// ==============================
-let sumSq = 0;
-for (let i = 0; i < N; i++) {
-  sumSq += samples[i] * samples[i];
-}
+  // 🔲 janela de Hann
+  const windowed = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+    windowed[i] = samples[i] * w;
+  }
 
-const rms = Math.sqrt(sumSq / N);
-const dB = 20 * Math.log10(rms / 32768);
-const intensity = Math.max(0, Math.min(1, (dB + 60) / 55));
+  const mags = util.fftMag(fft(windowed));
+  const freqRes = sampleRate / N;
 
-// ==============================
-// Resultado
-// ==============================
-parentPort.postMessage({
-  frequency: Number(bestFreq.toFixed(2)),
-  note: frequencyToNote(bestFreq),
-  intensity: Number(intensity.toFixed(3))
+  let bestI = 0;
+  let bestScore = 0;
+
+  for (let i = 1; i < mags.length / 2; i++) {
+    const f = i * freqRes;
+    if (f < 50 || f > 1200) continue;
+
+    let s = mags[i];
+    if (mags[2 * i]) s -= 0.6 * mags[2 * i];
+    if (mags[3 * i]) s -= 0.3 * mags[3 * i];
+
+    if (s > bestScore) {
+      bestScore = s;
+      bestI = i;
+    }
+  }
+
+  // 🎯 interpolação parabólica
+  let freq = bestI * freqRes;
+  if (bestI > 0 && bestI < mags.length - 1) {
+    const a = mags[bestI - 1];
+    const b = mags[bestI];
+    const c = mags[bestI + 1];
+    const p = 0.5 * (a - c) / (a - 2 * b + c);
+    freq = (bestI + p) * freqRes;
+  }
+
+  // 🔊 intensidade RMS normalizada
+  let sum = 0;
+  for (let i = 0; i < N; i++) sum += samples[i] * samples[i];
+  const rms = Math.sqrt(sum / N);
+  const dB = 20 * Math.log10(rms + 1e-12);
+  const intensity = Math.max(0, Math.min(1, (dB + 60) / 55));
+
+  parentPort.postMessage({
+    frequency: Number(freq.toFixed(2)),
+    note: frequencyToNote(freq),
+    intensity: Number(intensity.toFixed(3))
+  });
 });
