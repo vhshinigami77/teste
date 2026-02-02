@@ -5,7 +5,7 @@ import { frequencyToNote } from './dsp/noteUtils.js';
 const { fft, util } = fftPkg;
 
 const N = 2048;
-const RMS_THRESHOLD = 0.015; // ← limiar de sonoridade realista
+const RMS_THRESHOLD = 0.02; // ← limiar de sonoridade realista
 
 function computeRMS(samples) {
   let sum = 0;
@@ -85,3 +85,4 @@ parentPort.on('message', ({ samples, sampleRate }) => {
     intensity: Number(intensity.toFixed(3))
   });
 });
+
