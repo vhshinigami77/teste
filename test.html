@@ -98,7 +98,7 @@ async function startAudio() {
     const input = e.inputBuffer.getChannelData(0);
     const samples = Array.from(input);
 
-    const res = await fetch('http://localhost:3000/upload', {
+    const res = await fetch('https://teste-fb8o.onrender.com/upload', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
