@@ -17,11 +17,11 @@ function nearestPowerOfTwo(n) {
 }
 
 // ==============================
-// Parâmetros DSP
+// Parâmetros DSP (ajustados p/ flauta doce)
 // ==============================
 const WINDOW_SIZE = 4096;
-const MIN_FREQ = 50;
-const MAX_FREQ = 1200;
+const MIN_FREQ = 500;   // ~B4
+const MAX_FREQ = 2100;  // ~C7
 
 // ==============================
 // Ajuste do tamanho da janela
@@ -29,7 +29,7 @@ const MAX_FREQ = 1200;
 const rawN = Math.min(WINDOW_SIZE, samples.length);
 const N = nearestPowerOfTwo(rawN);
 
-// Áudio curto demais → evita crash e lixo espectral
+// Áudio curto demais
 if (N < 1024) {
   parentPort.postMessage({
     frequency: 0,
@@ -40,10 +40,33 @@ if (N < 1024) {
 }
 
 // ==============================
+// Intensidade (RMS) + GATE DE SILÊNCIO
+// ==============================
+let sumSq = 0;
+for (let i = 0; i < N; i++) {
+  sumSq += samples[i] * samples[i];
+}
+
+const rms = Math.sqrt(sumSq / N);
+
+// 🔇 silêncio real
+if (rms < 200) {
+  parentPort.postMessage({
+    frequency: 0,
+    note: 'PAUSA',
+    intensity: 0
+  });
+  process.exit(0);
+}
+
+// Normalização de intensidade
+const dB = 20 * Math.log10(rms / 32768);
+const intensity = Math.max(0, Math.min(1, (dB + 60) / 55));
+
+// ==============================
 // Janela de Hann
 // ==============================
 const windowed = new Array(N);
-
 for (let n = 0; n < N; n++) {
   const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * n / (N - 1));
   windowed[n] = samples[n] * w;
@@ -54,11 +77,10 @@ for (let n = 0; n < N; n++) {
 // ==============================
 const phasors = fft(windowed);
 const mags = fftUtil.fftMag(phasors);
-
 const freqResolution = sampleRate / N;
 
 // ==============================
-// Fundamental (penalização de harmônicos)
+// Busca da fundamental (com penalização de harmônicos)
 // ==============================
 let bestFreq = 0;
 let bestScore = 0;
@@ -78,16 +100,28 @@ for (let i = 1; i < mags.length / 2; i++) {
 }
 
 // ==============================
-// Intensidade (RMS)
+// Gate espectral (anti-ruído)
 // ==============================
-let sumSq = 0;
-for (let i = 0; i < N; i++) {
-  sumSq += samples[i] * samples[i];
+if (bestScore < 1e6) {
+  parentPort.postMessage({
+    frequency: 0,
+    note: 'PAUSA',
+    intensity: 0
+  });
+  process.exit(0);
 }
 
-const rms = Math.sqrt(sumSq / N);
-const dB = 20 * Math.log10(rms / 32768);
-const intensity = Math.max(0, Math.min(1, (dB + 60) / 55));
+// ==============================
+// Segurança final de faixa
+// ==============================
+if (bestFreq < MIN_FREQ || bestFreq > MAX_FREQ) {
+  parentPort.postMessage({
+    frequency: 0,
+    note: 'PAUSA',
+    intensity: 0
+  });
+  process.exit(0);
+}
 
 // ==============================
 // Resultado
