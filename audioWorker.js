@@ -36,7 +36,7 @@ if (N < 1024) {
     note: 'PAUSA',
     intensity: 0
   });
-  return;
+  process.exit(0);
 }
 
 // ==============================
@@ -57,7 +57,7 @@ if (rms < 200) {
     note: 'PAUSA',
     intensity: 0
   });
-  return;
+  process.exit(0);
 }
 
 // Normalização da intensidade
@@ -65,9 +65,9 @@ const dB = 20 * Math.log10(rms / 32768);
 const intensity = Math.max(0, Math.min(1, (dB + 60) / 55));
 
 // ==============================
-// Janela de Hann (otimizada)
+// Janela de Hann (compatível com fft-js)
 // ==============================
-const windowed = new Float32Array(N);
+const windowed = new Array(N);
 const twoPiOverN = 2 * Math.PI / (N - 1);
 
 for (let n = 0; n < N; n++) {
@@ -88,7 +88,7 @@ const minBin = Math.floor(MIN_FREQ / freqResolution);
 const maxBin = Math.ceil(MAX_FREQ / freqResolution);
 
 // ==============================
-// Busca da fundamental
+// Busca da fundamental (penalizando harmônicos)
 // ==============================
 let bestFreq = 0;
 let bestScore = 0;
@@ -112,7 +112,7 @@ for (let i = minBin; i <= maxBin; i++) {
 }
 
 // ==============================
-// Gate espectral
+// Gate espectral (anti-ruído)
 // ==============================
 if (!isFinite(bestFreq) || bestScore < 1e6) {
   parentPort.postMessage({
@@ -120,7 +120,7 @@ if (!isFinite(bestFreq) || bestScore < 1e6) {
     note: 'PAUSA',
     intensity: 0
   });
-  return;
+  process.exit(0);
 }
 
 // ==============================
@@ -132,11 +132,11 @@ if (bestFreq < MIN_FREQ || bestFreq > MAX_FREQ) {
     note: 'PAUSA',
     intensity: 0
   });
-  return;
+  process.exit(0);
 }
 
 // ==============================
-// Resultado
+// Resultado final
 // ==============================
 parentPort.postMessage({
   frequency: Number(bestFreq.toFixed(2)),
