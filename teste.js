@@ -1,41 +1,83 @@
 import express from 'express';
+import multer from 'multer';
+import cors from 'cors';
+import fs from 'fs';
 import { Worker } from 'worker_threads';
+import { execSync } from 'child_process';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({ limit: '5mb' }));
+app.use(cors());
 
-app.post('/upload', (req, res) => {
-  const { samples, sampleRate } = req.body;
+// ==============================
+// Upload config
+// ==============================
+const upload = multer({ dest: 'uploads/' });
 
-  if (!samples || !sampleRate) {
-    return res.status(400).json({ error: 'Dados inválidos' });
-  }
+// ==============================
+// Endpoint
+// ==============================
+app.post('/upload', upload.single('audio'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Arquivo não enviado' });
+    }
 
-  const worker = new Worker(
-    path.join(__dirname, 'audioWorker.js'),
-    { type: 'module' }
-  );
+    const inputPath = req.file.path;
+    const wavPath = `${inputPath}.wav`;
 
-  worker.postMessage({ samples, sampleRate });
+    // Converte para WAV mono 44.1 kHz
+    execSync(
+      `ffmpeg -y -i "${inputPath}" -ar 44100 -ac 1 "${wavPath}"`,
+      { stdio: 'ignore' }
+    );
 
-  worker.on('message', msg => {
-    res.json(msg);
-    worker.terminate();
-  });
+    const buffer = fs.readFileSync(wavPath);
+    const HEADER = 44;
 
-  worker.on('error', err => {
+    const samples = [];
+    for (let i = HEADER; i < buffer.length; i += 2) {
+      samples.push(buffer.readInt16LE(i));
+    }
+
+    // ==============================
+    // Worker Thread
+    // ==============================
+    const worker = new Worker('./audioWorker.js', {
+      workerData: {
+        samples,
+        sampleRate: 44100
+      }
+    });
+
+    worker.on('message', result => {
+      res.json(result);
+
+      // Limpeza dos arquivos temporários
+      fs.unlinkSync(inputPath);
+      fs.unlinkSync(wavPath);
+    });
+
+    worker.on('error', err => {
+      console.error(err);
+      res.status(500).json({ error: 'Erro no processamento do áudio' });
+    });
+
+    worker.on('exit', code => {
+      if (code !== 0) {
+        console.error(`Worker finalizou com código ${code}`);
+      }
+    });
+
+  } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Erro no worker' });
-    worker.terminate();
-  });
+    res.status(500).json({ error: 'Erro geral no servidor' });
+  }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log('Servidor rodando na porta', PORT);
+// ==============================
+// Server
+// ==============================
+app.listen(3000, () => {
+  console.log('Servidor rodando em http://localhost:3000');
 });
