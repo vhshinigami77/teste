@@ -1,132 +1,272 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>Detector de Notas - Flauta Doce</title>
+  <meta charset="UTF-8" />
+  <title>Detector de Notas - Flauta Doce</title>
+  <style>
+    body {
+      background: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
 
-<style>
-body { background:#111; color:#fff; font-family:Arial; text-align:center; padding:20px }
-button { padding:10px 20px; margin:5px; font-size:16px }
-.keyboards { display:flex; flex-direction:column; gap:20px }
-.keyboard { display:flex; flex-wrap:wrap; justify-content:center; gap:4px }
-.key { width:55px; height:70px; border-radius:6px; opacity:.2; display:flex; align-items:center; justify-content:center; font-weight:bold }
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      opacity: 0.3;
+      transition: opacity 0.3s ease;
+    }
+    button:enabled { opacity: 1; }
+    #startBtn { background: #4caf50; color: white; }
+    #stopBtn { background: #f44336; color: white; }
 
-.C{background:#4fc3f7}.Csharp{background:#26a69a}.D{background:#66bb6a}
-.Dsharp{background:#8bc34a}.E{background:#dce775;color:#000}
-.F{background:#ffb74d}.Fsharp{background:#ff8a65}.G{background:#ef5350}
-.Gsharp{background:#ba68c8}.A{background:#9575cd}.Asharp{background:#7986cb}.B{background:#64b5f6}
+    .keyboards {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin: 30px auto;
+      max-width: 1000px;
+    }
+    .keyboard {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .key {
+      width: 55px;
+      height: 70px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: bold;
+      font-size: 13px;
+      opacity: 0.2;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
 
-.note-display{margin-top:20px;font-size:28px}
-#magnitudeBar{height:20px;background:#4caf50;width:0}
-</style>
+    .C { background: #4fc3f7; }
+    .Csharp { background: #26a69a; }
+    .D { background: #66bb6a; }
+    .Dsharp { background: #8bc34a; }
+    .E { background: #dce775; color:#000; }
+    .F { background: #ffb74d; }
+    .Fsharp { background: #ff8a65; }
+    .G { background: #ef5350; }
+    .Gsharp { background: #ba68c8; }
+    .A { background: #9575cd; }
+    .Asharp { background: #7986cb; }
+    .B { background: #64b5f6; }
+
+    .note-display {
+      margin-top: 20px;
+      font-size: 28px;
+      font-weight: bold;
+      padding: 10px 20px;
+      border-radius: 10px;
+      background: #222;
+      display: inline-block;
+      box-shadow: 0 0 10px #000;
+      transition: all 0.3s ease;
+    }
+
+    .magnitude-bar-container {
+      width: 300px;
+      height: 20px;
+      background: #333;
+      margin: 10px auto;
+      border-radius: 10px;
+    }
+    #magnitudeBar {
+      width: 0%;
+      height: 100%;
+      background: #4caf50;
+      border-radius: 10px;
+      transition: width 0.3s;
+    }
+  </style>
 </head>
 
 <body>
 
-<h1>Detector de Notas – Flauta Doce</h1>
+  <h1>Detector de Notas - Flauta Doce</h1>
 
-<button id="startBtn">Iniciar</button>
-<button id="stopBtn" disabled>Parar</button>
+  <button id="startBtn">Iniciar</button>
+  <button id="stopBtn" disabled>Parar</button>
 
-<div class="keyboards">
-  <div class="keyboard">
-    <div class="key C" data-note="C5">C5</div>
-    <div class="key D" data-note="D5">D5</div>
-    <div class="key E" data-note="E5">E5</div>
-    <div class="key F" data-note="F5">F5</div>
-    <div class="key G" data-note="G5">G5</div>
-    <div class="key A" data-note="A5">A5</div>
-    <div class="key B" data-note="B5">B5</div>
+  <div class="keyboards">
+    <div class="keyboard" id="octave5">
+      <div class="key C" data-note="C5">C5</div>
+      <div class="key Csharp" data-note="C#5">C#5 / Db5</div>
+      <div class="key D" data-note="D5">D5</div>
+      <div class="key Dsharp" data-note="D#5">D#5 / Eb5</div>
+      <div class="key E" data-note="E5">E5</div>
+      <div class="key F" data-note="F5">F5</div>
+      <div class="key Fsharp" data-note="F#5">F#5 / Gb5</div>
+      <div class="key G" data-note="G5">G5</div>
+      <div class="key Gsharp" data-note="G#5">G#5 / Ab5</div>
+      <div class="key A" data-note="A5">A5</div>
+      <div class="key Asharp" data-note="A#5">A#5 / Bb5</div>
+      <div class="key B" data-note="B5">B5</div>
+    </div>
+
+    <div class="keyboard" id="octave6">
+      <div class="key C" data-note="C6">C6</div>
+      <div class="key Csharp" data-note="C#6">C#6 / Db6</div>
+      <div class="key D" data-note="D6">D6</div>
+      <div class="key Dsharp" data-note="D#6">D#6 / Eb6</div>
+      <div class="key E" data-note="E6">E6</div>
+      <div class="key F" data-note="F6">F6</div>
+      <div class="key Fsharp" data-note="F#6">F#6 / Gb6</div>
+      <div class="key G" data-note="G6">G6</div>
+      <div class="key Gsharp" data-note="G#6">G#6 / Ab6</div>
+      <div class="key A" data-note="A6">A6</div>
+      <div class="key Asharp" data-note="A#6">A#6 / Bb6</div>
+      <div class="key B" data-note="B6">B6</div>
+    </div>
   </div>
 
-  <div class="keyboard">
-    <div class="key C" data-note="C6">C6</div>
-    <div class="key D" data-note="D6">D6</div>
-    <div class="key E" data-note="E6">E6</div>
-    <div class="key F" data-note="F6">F6</div>
-    <div class="key G" data-note="G6">G6</div>
-    <div class="key A" data-note="A6">A6</div>
-    <div class="key B" data-note="B6">B6</div>
+  <div class="note-display" id="noteDisplay">Nenhuma nota</div>
+
+  <div class="magnitude-bar-container">
+    <div id="magnitudeBar"></div>
   </div>
-</div>
 
-<div class="note-display" id="noteDisplay">Nenhuma nota</div>
-<div id="magnitudeBar"></div>
+  <script>
+    let mediaRecorder;
+    let isRecording = false;
+    let stream;
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const noteDisplay = document.getElementById('noteDisplay');
+    const magnitudeBar = document.getElementById('magnitudeBar');
+    const keys = document.querySelectorAll('.key');
 
-<script>
-const API_URL = 'https://teste-fb8o.onrender.com/upload';
-const BUFFER_SIZE = 2048;
+    function resetKeys() {
+      keys.forEach(k => { 
+        k.classList.remove('active'); 
+        k.style.opacity = 0.2; 
+        k.style.boxShadow = 'none'; 
+      });
+      noteDisplay.style.opacity = 0.2;
+      noteDisplay.style.boxShadow = '0 0 5px #fff';
+      magnitudeBar.style.width = '0%';
+    }
 
-let audioCtx, processor, mic, stream;
-let buffer = [];
-let running = false;
+    function highlightNote(note, freq, magnitude) {
+      resetKeys();
 
-const keys = document.querySelectorAll('.key');
-const noteDisplay = document.getElementById('noteDisplay');
-const bar = document.getElementById('magnitudeBar');
+      let opacity = 0.2;
+      let boxShadow = '0 0 5px #fff';
 
-function reset() {
-  keys.forEach(k => k.style.opacity = .2);
-  bar.style.width = '0';
-}
+      if (magnitude >= 0.7) { opacity = 1; boxShadow = '0 0 30px #fff'; }
+      else if (magnitude >= 0.3) { opacity = 0.6; boxShadow = '0 0 15px #fff'; }
+      else if (magnitude > 0) { opacity = 0.4; boxShadow = '0 0 10px #fff'; }
 
-function highlight(note, freq, mag) {
-  reset();
-  if (note === 'PAUSA') {
-    noteDisplay.textContent = 'PAUSA';
-    return;
-  }
-  const k = document.querySelector(`[data-note="${note}"]`);
-  if (k) k.style.opacity = 1;
-  noteDisplay.textContent = `${note} – ${freq.toFixed(1)} Hz`;
-  bar.style.width = `${mag*100}%`;
-}
+      if (!note || note === "PAUSA") {
+        noteDisplay.textContent = `PAUSA - Mag: ${magnitude.toFixed(2)}`;
+        noteDisplay.style.background = "#222";
+        noteDisplay.style.color = "#fff";
+        noteDisplay.style.opacity = opacity;
+        noteDisplay.style.boxShadow = boxShadow;
+      } else {
+        const keyEl = document.querySelector(`.key[data-note="${note}"]`);
+        if (keyEl) {
+          keyEl.classList.add('active');
+          keyEl.style.opacity = opacity;
+          keyEl.style.boxShadow = boxShadow;
 
-async function send() {
-  if (buffer.length < BUFFER_SIZE) return;
-  const samples = buffer.splice(0, BUFFER_SIZE);
+          noteDisplay.style.background = window.getComputedStyle(keyEl).backgroundColor;
+          noteDisplay.style.color = window.getComputedStyle(keyEl).color;
+          noteDisplay.style.opacity = opacity;
+          noteDisplay.style.boxShadow = boxShadow;
+        }
+        noteDisplay.textContent = `${note} - ${freq.toFixed(1)} Hz - Mag: ${magnitude.toFixed(2)}`;
+      }
 
-  const res = await fetch(API_URL, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ samples, sampleRate: audioCtx.sampleRate })
-  });
+      magnitudeBar.style.width = `${Math.min(magnitude,1)*100}%`;
+    }
 
-  const data = await res.json();
-  highlight(data.note, data.frequency, data.intensity);
-}
+    async function enviarAudio(blob) {
+      if (!blob || blob.size < 100) return; // ignora áudio muito pequeno
 
-async function start() {
-  audioCtx = new AudioContext({ sampleRate:44100 });
-  stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-  mic = audioCtx.createMediaStreamSource(stream);
+      const formData = new FormData();
+      formData.append('audio', blob, 'audio.webm');
 
-  processor = audioCtx.createScriptProcessor(BUFFER_SIZE,1,1);
-  processor.onaudioprocess = e => buffer.push(...e.inputBuffer.getChannelData(0));
+      try {
+        const response = await fetch('https://teste-fb8o.onrender.com/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
 
-  mic.connect(processor);
-  processor.connect(audioCtx.destination);
+        highlightNote(
+          data.note,       // corrigido
+          data.frequency,  // corrigido
+          data.intensity   // corrigido
+        );
+      } catch(err) {
+        console.error(err);
+        noteDisplay.textContent = "Erro na análise";
+        noteDisplay.style.background = "#222";
+        noteDisplay.style.color = "#fff";
+        resetKeys();
+      }
+    }
 
-  setInterval(send, 150);
-}
+    async function gravarEProcessar() {
+      while (isRecording) {
+        mediaRecorder.start();
+        const audioBlob = await new Promise(resolve => {
+          mediaRecorder.ondataavailable = e => resolve(e.data);
+          setTimeout(() => mediaRecorder.stop(), 500);
+        });
+        await enviarAudio(audioBlob);
+      }
+    }
 
-startBtn.onclick = async () => {
-  await start();
-  running = true;
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-};
+    startBtn.onclick = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
 
-stopBtn.onclick = () => {
-  running = false;
-  processor.disconnect();
-  mic.disconnect();
-  stream.getTracks().forEach(t=>t.stop());
-  audioCtx.close();
-  reset();
-  noteDisplay.textContent = 'Nenhuma nota';
-};
-</script>
+        isRecording = true;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
 
+        noteDisplay.textContent = "Gravando...";
+        noteDisplay.style.background = "#222";
+        noteDisplay.style.color = "#fff";
+
+        gravarEProcessar();
+      } catch (err) {
+        alert('Erro ao acessar o microfone.');
+        console.error(err);
+      }
+    };
+
+    stopBtn.onclick = () => {
+      isRecording = false;
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+      if (stream) stream.getTracks().forEach(track => track.stop());
+
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+
+      noteDisplay.textContent = "Gravação parada";
+      noteDisplay.style.background = "#222";
+      noteDisplay.style.color = "#fff";
+
+      resetKeys();
+    };
+  </script>
 </body>
 </html>
